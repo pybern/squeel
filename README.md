@@ -60,3 +60,37 @@ pnpm dev
 ```
 
 Your app template should now be running on [localhost:3000](http://localhost:3000).
+
+## Development Mode Authentication Bypass
+
+For easier development and testing, this application includes an authentication bypass feature that works automatically in development mode (`NODE_ENV=development`).
+
+### How It Works
+
+- **No Setup Required**: Developers can run the application without configuring OAuth providers or authentication services
+- **Automatic Mock Session**: A mock user session is automatically provided in development mode
+- **Full Feature Access**: All application features (chat, history, file uploads, etc.) work without authentication
+- **Production Safety**: The bypass only works in development - production deployments use normal authentication
+
+### Development vs Production
+
+**Development Mode (`npm run dev`):**
+- Authentication middleware is bypassed
+- Mock user session is automatically created
+- No OAuth configuration needed
+- All API endpoints work without authentication
+
+**Production Mode:**
+- Normal NextAuth authentication flow is enforced
+- OAuth providers must be configured
+- All security measures are active
+- Authentication is required for all protected routes
+
+### Quick Start for Developers
+
+1. Clone the repository
+2. Run `npm install` (or `pnpm install`)  
+3. Run `npm run dev` (or `pnpm dev`)
+4. Open [localhost:3000](http://localhost:3000) - no authentication required!
+
+This feature significantly reduces the barrier to entry for new developers and makes local development much more efficient.
