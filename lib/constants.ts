@@ -11,3 +11,13 @@ export const isTestEnvironment = Boolean(
 export const guestRegex = /^guest-\d+$/;
 
 export const DUMMY_PASSWORD = generateDummyPassword();
+
+// Mock user for development mode when auth is disabled
+export const DEV_MOCK_SESSION = {
+  user: {
+    id: 'dev-user-123',
+    email: 'dev@localhost',
+    type: 'regular' as const,
+  },
+  expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days from now
+};

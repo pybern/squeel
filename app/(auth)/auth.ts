@@ -3,7 +3,7 @@ import NextAuth, { type DefaultSession } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import { createGuestUser, getUser } from '@/lib/db/queries';
 import { authConfig } from './auth.config';
-import { DUMMY_PASSWORD } from '@/lib/constants';
+import { DUMMY_PASSWORD, isDevelopmentEnvironment, DEV_MOCK_SESSION } from '@/lib/constants';
 import type { DefaultJWT } from 'next-auth/jwt';
 
 export type UserType = 'guest' | 'regular';
@@ -90,3 +90,21 @@ export const {
     },
   },
 });
+
+/**
+ * Get session with development mode fallback.
+ * In development mode, returns a mock user when auth is disabled.
+ */
+export async function getSessionOrDev() {
+  if (isDevelopmentEnvironment) {
+    // In development mode, return mock user when no auth is present
+    const session = await auth();
+    if (!session?.user) {
+      return DEV_MOCK_SESSION;
+    }
+    return session;
+  }
+  
+  // In production, use regular auth
+  return auth();
+}
