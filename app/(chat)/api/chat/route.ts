@@ -39,6 +39,9 @@ import type { Chat } from '@/lib/db/schema';
 import { differenceInSeconds } from 'date-fns';
 import { ChatSDKError } from '@/lib/errors';
 
+import classifyIntent from '@/lib/ai/agents/intent-agent';
+import suggestTables from '@/lib/ai/agents/table-agent';
+
 export const maxDuration = 60;
 
 let globalStreamContext: ResumableStreamContext | null = null;
@@ -145,147 +148,185 @@ export async function POST(request: Request) {
 
     const streamId = generateUUID();
     await createStreamId({ streamId, chatId: id });
+    const intent = await classifyIntent(messages[messages.length - 1].content);
 
-    const stream = createDataStream({
-      execute: (dataStream) => {
-        const result = streamText({
-          model: myProvider.languageModel(selectedChatModel),
-          system: systemPrompt({ selectedChatModel, requestHints }),
-          messages,
-          experimental_transform: smoothStream({ chunking: 'word' }),
-          experimental_generateMessageId: generateUUID,
-          onFinish: async ({ response }) => {
-            if (session.user?.id) {
-              try {
-                const assistantId = getTrailingMessageId({
-                  messages: response.messages.filter(
-                    (message) => message.role === 'assistant',
-                  ),
-                });
+    let stream;
 
-                if (!assistantId) {
-                  throw new Error('No assistant message found!');
+    if (intent.isSqlRelated) {
+      const tableAgentResult = await suggestTables(messages[messages.length - 1].content, intent, messages);
+      
+      stream = createDataStream({
+        execute: (dataStream) => {
+          const result = streamText({
+            model: myProvider.languageModel('lg-model'),
+            system: `You are an expert SQL analyst and query architect. Your role is to help users build effective SQL queries based on database schema information discovered by a table agent.
+
+## Your Task:
+Analyze the table agent results below and provide actionable SQL insights to help the user answer their question.
+
+## Table Agent Analysis Results:
+${tableAgentResult}
+
+## Instructions:
+1. **Interpret the Results**: Review the tables, columns, and relationships identified by the table agent
+2. **Assess Relevance**: Determine which tables are most relevant to the user's specific question
+3. **Suggest Query Structure**: Recommend SQL query patterns, JOINs, and WHERE clauses
+4. **Provide Examples**: Give concrete SQL examples when possible
+5. **Explain Reasoning**: Explain why certain tables/columns are recommended
+6. **Identify Gaps**: Point out any missing information or assumptions
+
+## Response Format:
+- Start with a brief summary of the most relevant tables for their question
+- Suggest 1-2 specific SQL query approaches with example code
+- Explain any important relationships between tables
+- Mention key columns they should focus on
+- Provide tips for filtering, sorting, or aggregating data as needed
+
+## Guidelines:
+- Be specific and actionable
+- Use proper SQL syntax in examples
+- Explain complex JOINs or concepts clearly
+- Consider performance implications
+- Suggest alternative approaches when applicable
+
+Focus on helping the user write effective SQL queries based on the discovered schema information.`,
+            messages,
+            experimental_transform: smoothStream({ chunking: 'word' }),
+            experimental_generateMessageId: generateUUID,
+            onFinish: async ({ response }) => {
+              if (session.user?.id) {
+                try {
+                  const assistantId = getTrailingMessageId({
+                    messages: response.messages.filter(
+                      (message) => message.role === 'assistant',
+                    ),
+                  });
+
+                  if (!assistantId) {
+                    throw new Error('No assistant message found!');
+                  }
+
+                  const [, assistantMessage] = appendResponseMessages({
+                    messages: [message],
+                    responseMessages: response.messages,
+                  });
+
+                  await saveMessages({
+                    messages: [
+                      {
+                        id: assistantId,
+                        chatId: id,
+                        role: assistantMessage.role,
+                        parts: assistantMessage.parts,
+                        attachments:
+                          assistantMessage.experimental_attachments ?? [],
+                        createdAt: new Date(),
+                      },
+                    ],
+                  });
+                } catch (_) {
+                  console.error('Failed to save chat');
                 }
-
-                const [, assistantMessage] = appendResponseMessages({
-                  messages: [message],
-                  responseMessages: response.messages,
-                });
-
-                await saveMessages({
-                  messages: [
-                    {
-                      id: assistantId,
-                      chatId: id,
-                      role: assistantMessage.role,
-                      parts: assistantMessage.parts,
-                      attachments:
-                        assistantMessage.experimental_attachments ?? [],
-                      createdAt: new Date(),
-                    },
-                  ],
-                });
-              } catch (_) {
-                console.error('Failed to save chat');
               }
-            }
-          },
-          experimental_telemetry: {
-            isEnabled: isProductionEnvironment,
-            functionId: 'stream-text',
-          },
-        });
+            },
+            experimental_telemetry: {
+              isEnabled: isProductionEnvironment,
+              functionId: 'stream-text',
+            },
+          });
 
-        result.consumeStream();
+          result.consumeStream();
 
-        result.mergeIntoDataStream(dataStream, {
-          sendReasoning: true,
-        });
-      },
-      onError: () => {
-        return 'Oops, an error occurred!';
-      },
-    });
+          result.mergeIntoDataStream(dataStream, {
+            sendReasoning: true,
+          });
+        },
+        onError: () => {
+          return 'Oops, an error occurred!';
+        },
+      });
+    }
+    else {
+      stream = createDataStream({
+        execute: (dataStream) => {
+          const result = streamText({
+            model: myProvider.languageModel(selectedChatModel),
+            system: systemPrompt({ selectedChatModel, requestHints }),
+            messages,
+            maxSteps: 5,
+            experimental_activeTools:
+              selectedChatModel === 'chat-model-reasoning'
+                ? []
+                : [
+                  'getWeather',
+                  'createDocument',
+                  'updateDocument',
+                  'requestSuggestions',
+                ],
+            experimental_transform: smoothStream({ chunking: 'word' }),
+            experimental_generateMessageId: generateUUID,
+            tools: {
+              getWeather,
+              createDocument: createDocument({ session, dataStream }),
+              updateDocument: updateDocument({ session, dataStream }),
+              requestSuggestions: requestSuggestions({
+                session,
+                dataStream,
+              }),
+            },
+            onFinish: async ({ response }) => {
+              if (session.user?.id) {
+                try {
+                  const assistantId = getTrailingMessageId({
+                    messages: response.messages.filter(
+                      (message) => message.role === 'assistant',
+                    ),
+                  });
 
-    // const stream = createDataStream({
-    //   execute: (dataStream) => {
-    //     const result = streamText({
-    //       model: myProvider.languageModel(selectedChatModel),
-    //       system: systemPrompt({ selectedChatModel, requestHints }),
-    //       messages,
-    //       maxSteps: 5,
-    //       experimental_activeTools:
-    //         selectedChatModel === 'chat-model-reasoning'
-    //           ? []
-    //           : [
-    //               'getWeather',
-    //               'createDocument',
-    //               'updateDocument',
-    //               'requestSuggestions',
-    //             ],
-    //       experimental_transform: smoothStream({ chunking: 'word' }),
-    //       experimental_generateMessageId: generateUUID,
-    //       tools: {
-    //         getWeather,
-    //         createDocument: createDocument({ session, dataStream }),
-    //         updateDocument: updateDocument({ session, dataStream }),
-    //         requestSuggestions: requestSuggestions({
-    //           session,
-    //           dataStream,
-    //         }),
-    //       },
-    //       onFinish: async ({ response }) => {
-    //         if (session.user?.id) {
-    //           try {
-    //             const assistantId = getTrailingMessageId({
-    //               messages: response.messages.filter(
-    //                 (message) => message.role === 'assistant',
-    //               ),
-    //             });
+                  if (!assistantId) {
+                    throw new Error('No assistant message found!');
+                  }
 
-    //             if (!assistantId) {
-    //               throw new Error('No assistant message found!');
-    //             }
+                  const [, assistantMessage] = appendResponseMessages({
+                    messages: [message],
+                    responseMessages: response.messages,
+                  });
 
-    //             const [, assistantMessage] = appendResponseMessages({
-    //               messages: [message],
-    //               responseMessages: response.messages,
-    //             });
+                  await saveMessages({
+                    messages: [
+                      {
+                        id: assistantId,
+                        chatId: id,
+                        role: assistantMessage.role,
+                        parts: assistantMessage.parts,
+                        attachments:
+                          assistantMessage.experimental_attachments ?? [],
+                        createdAt: new Date(),
+                      },
+                    ],
+                  });
+                } catch (_) {
+                  console.error('Failed to save chat');
+                }
+              }
+            },
+            experimental_telemetry: {
+              isEnabled: isProductionEnvironment,
+              functionId: 'stream-text',
+            },
+          });
 
-    //             await saveMessages({
-    //               messages: [
-    //                 {
-    //                   id: assistantId,
-    //                   chatId: id,
-    //                   role: assistantMessage.role,
-    //                   parts: assistantMessage.parts,
-    //                   attachments:
-    //                     assistantMessage.experimental_attachments ?? [],
-    //                   createdAt: new Date(),
-    //                 },
-    //               ],
-    //             });
-    //           } catch (_) {
-    //             console.error('Failed to save chat');
-    //           }
-    //         }
-    //       },
-    //       experimental_telemetry: {
-    //         isEnabled: isProductionEnvironment,
-    //         functionId: 'stream-text',
-    //       },
-    //     });
+          result.consumeStream();
 
-    //     result.consumeStream();
-
-    //     result.mergeIntoDataStream(dataStream, {
-    //       sendReasoning: true,
-    //     });
-    //   },
-    //   onError: () => {
-    //     return 'Oops, an error occurred!';
-    //   },
-    // });
+          result.mergeIntoDataStream(dataStream, {
+            sendReasoning: true,
+          });
+        },
+        onError: () => {
+          return 'Oops, an error occurred!';
+        },
+      });
+    }
 
     const streamContext = getStreamContext();
 
