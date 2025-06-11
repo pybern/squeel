@@ -77,7 +77,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { id, message, selectedChatModel, selectedVisibilityType } =
+    const { id, message, selectedChatModel, selectedVisibilityType, selectedCollectionId } =
       requestBody;
 
     const session = await getSessionOrDev();
@@ -153,8 +153,8 @@ export async function POST(request: Request) {
     let stream;
 
     if (intent.isSqlRelated) {
-      const tableAgentResult = await suggestTables(messages[messages.length - 1].content, intent, messages);
-      
+      const tableAgentResult = await suggestTables(messages[messages.length - 1].content, intent, messages, selectedCollectionId);
+
       stream = createDataStream({
         execute: (dataStream) => {
           const result = streamText({

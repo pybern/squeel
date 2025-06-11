@@ -18,6 +18,7 @@ import { toast } from './toast';
 import type { Session } from 'next-auth';
 import { useSearchParams } from 'next/navigation';
 import { useChatVisibility } from '@/hooks/use-chat-visibility';
+import { useCollectionSelection } from '@/hooks/use-collection-selection';
 import { useAutoResume } from '@/hooks/use-auto-resume';
 import { ChatSDKError } from '@/lib/errors';
 
@@ -45,6 +46,11 @@ export function Chat({
     initialVisibilityType,
   });
 
+  const { collectionId } = useCollectionSelection({
+    chatId: id,
+    initialCollectionId: 'all',
+  });
+
   const {
     messages,
     setMessages,
@@ -69,6 +75,7 @@ export function Chat({
       message: body.messages.at(-1),
       selectedChatModel: initialChatModel,
       selectedVisibilityType: visibilityType,
+      selectedCollectionId: collectionId,
     }),
     onFinish: () => {
       mutate(unstable_serialize(getChatHistoryPaginationKey));

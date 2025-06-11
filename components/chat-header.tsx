@@ -12,6 +12,8 @@ import { useSidebar } from './ui/sidebar';
 import { memo } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { type VisibilityType, VisibilitySelector } from './visibility-selector';
+import { CollectionSelector } from './collection-selector';
+import { useCollectionSelection } from '@/hooks/use-collection-selection';
 import type { Session } from 'next-auth';
 
 function PureChatHeader({
@@ -31,6 +33,11 @@ function PureChatHeader({
   const { open } = useSidebar();
 
   const { width: windowWidth } = useWindowSize();
+  
+  const { collectionId, setCollectionId } = useCollectionSelection({
+    chatId,
+    initialCollectionId: 'all',
+  });
 
   return (
     <header className="flex sticky top-0 bg-background py-1.5 items-center px-2 md:px-2 gap-2">
@@ -68,6 +75,14 @@ function PureChatHeader({
           chatId={chatId}
           selectedVisibilityType={selectedVisibilityType}
           className="order-1 md:order-3"
+        />
+      )}
+
+      {!isReadonly && (
+        <CollectionSelector
+          selectedCollectionId={collectionId}
+          onCollectionChange={setCollectionId}
+          className="order-1 md:order-4"
         />
       )}
 

@@ -15,8 +15,8 @@ interface IntentResult {
   reasoning: string
 }
 
-export default async function suggestTables(userMessage: string, intent: IntentResult, messages: any[]) {
-  console.log("Table agent called with:", { userMessage, intent })
+export default async function suggestTables(userMessage: string, intent: IntentResult, messages: any[], selectedCollectionId = 'all') {
+  console.log("Table agent called with:", { userMessage, intent, selectedCollectionId })
 
   const {
     text: result,
@@ -46,18 +46,21 @@ User's context:
         parameters: z.object({
           query: z.string().describe("The search query to find relevant tables"),
           limit: z.number().optional().default(5).describe("Maximum number of tables to return"),
+          table_name: z.string().optional().describe("Optional specific table name to filter results"),
         }),
-        execute: async ({ query, limit = 5 }) => {
+        execute: async ({ query, limit = 5, table_name }) => {
           console.log("Searching for tables")
           try {
             // Generate embedding for the search query
             const queryEmbedding = await generateEmbedding(query)
 
-            // Search for similar tables in Supabase using vector similarity
+            // Search for similar tables in Supabase using vector similarity with optional collection filtering
             const { data: results, error } = await supabase.rpc("match_table_embeddings", {
               query_embedding: queryEmbedding,
               match_threshold: 0.3,
               match_count: limit,
+              filter_db_id: selectedCollectionId === 'all' ? null : selectedCollectionId,
+              filter_table_name: table_name || null,
             })
 
             if (error) {
@@ -94,6 +97,7 @@ User's context:
               tables: Object.values(tableGroups),
               searchQuery: query,
               resultsCount: results?.length || 0,
+              selectedCollection: selectedCollectionId,
             }
           } catch (error) {
             console.error("Table search error:", error)
