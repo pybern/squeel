@@ -138,6 +138,7 @@ export function CollectionSelector({
   );
 
   const handleCollectionSelect = (collectionId: string) => {
+    console.log('Collection changed to:', collectionId);
     onCollectionChange(collectionId);
     setOpen(false);
     setSearchQuery(''); // Clear search when selection is made
@@ -206,10 +207,10 @@ export function CollectionSelector({
     return (
       <Button
         variant="outline"
-        className={cn("md:px-2 md:h-[34px] opacity-50", className)}
+        className={cn("md:px-2 md:h-[34px] opacity-50 [&_svg:first-child]:!w-3 [&_svg:first-child]:!h-3", className)}
         disabled
       >
-        <DatabaseIcon size={14} />
+        <DatabaseIcon size={12} />
         Loading...
         <ChevronDownIcon />
       </Button>
@@ -228,10 +229,10 @@ export function CollectionSelector({
         <Button
           data-testid="collection-selector"
           variant="outline"
-          className="md:px-2 md:h-[34px]"
+          className="md:px-2 md:h-[34px] [&_svg:first-child]:!w-3 [&_svg:first-child]:!h-3"
           onKeyDown={handleKeyDown}
         >
-          <DatabaseIcon size={14} />
+          <DatabaseIcon size={12} />
           {selectedCollection?.label || 'Select Collection'}
           <ChevronDownIcon />
         </Button>

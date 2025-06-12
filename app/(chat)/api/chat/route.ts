@@ -41,6 +41,7 @@ import { ChatSDKError } from '@/lib/errors';
 
 import classifyIntent from '@/lib/ai/agents/intent-agent';
 import suggestTables from '@/lib/ai/agents/table-agent';
+import suggestQueryLogs from '@/lib/ai/agents/query-log-agent';
 
 export const maxDuration = 60;
 
@@ -150,46 +151,56 @@ export async function POST(request: Request) {
     await createStreamId({ streamId, chatId: id });
     const intent = await classifyIntent(messages[messages.length - 1].content);
 
-    let stream;
+    console.log('Selected Collection ID:', selectedCollectionId);
 
+    let stream;
+    // reception agent
     if (intent.isSqlRelated) {
+      console.log('SQL-related query detected, using collection:', selectedCollectionId);
       const tableAgentResult = await suggestTables(messages[messages.length - 1].content, intent, messages, selectedCollectionId);
+      const queryLogAgentResult = await suggestQueryLogs(messages[messages.length - 1].content, intent, messages, selectedCollectionId);
 
       stream = createDataStream({
         execute: (dataStream) => {
           const result = streamText({
             model: myProvider.languageModel('lg-model'),
-            system: `You are an expert SQL analyst and query architect. Your role is to help users build effective SQL queries based on database schema information discovered by a table agent.
+            system: `You are an expert SQL analyst and query architect. Your role is to help users build effective SQL queries based on both database schema information and historical query patterns discovered by specialized agents.
 
 ## Your Task:
-Analyze the table agent results below and provide actionable SQL insights to help the user answer their question.
+Analyze the results from both the table agent and query log agent to provide the most accurate and effective SQL recommendations for the user's question.
 
 ## Table Agent Analysis Results:
 ${tableAgentResult}
 
+## Query Log Agent Analysis Results:
+${queryLogAgentResult}
+
 ## Instructions:
-1. **Interpret the Results**: Review the tables, columns, and relationships identified by the table agent
-2. **Assess Relevance**: Determine which tables are most relevant to the user's specific question
-3. **Suggest Query Structure**: Recommend SQL query patterns, JOINs, and WHERE clauses
-4. **Provide Examples**: Give concrete SQL examples when possible
-5. **Explain Reasoning**: Explain why certain tables/columns are recommended
-6. **Identify Gaps**: Point out any missing information or assumptions
+1. **Cross-Reference Information**: Compare table schema findings with historical query patterns
+2. **Assess Relevance**: Determine which tables and past queries are most relevant to the user's specific question
+3. **Learn from History**: Use successful query patterns from the logs to inform your recommendations
+4. **Suggest Optimized Queries**: Combine schema knowledge with proven query patterns for better results
+5. **Provide Concrete Examples**: Give specific SQL examples based on both schema and historical patterns
+6. **Explain Reasoning**: Explain why certain approaches are recommended based on both sources
+7. **Identify Best Practices**: Point out patterns from successful historical queries
 
 ## Response Format:
-- Start with a brief summary of the most relevant tables for their question
-- Suggest 1-2 specific SQL query approaches with example code
-- Explain any important relationships between tables
-- Mention key columns they should focus on
-- Provide tips for filtering, sorting, or aggregating data as needed
+- Start with a brief summary of the most relevant tables and historical query patterns
+- Suggest 1-2 specific SQL query approaches with example code based on both schema and query logs
+- Explain key relationships between tables and how they've been used in past queries
+- Highlight important columns and filtering patterns from successful queries
+- Provide performance tips based on historical query complexity and patterns
+- Suggest alternative approaches when multiple patterns exist
 
 ## Guidelines:
-- Be specific and actionable
-- Use proper SQL syntax in examples
-- Explain complex JOINs or concepts clearly
-- Consider performance implications
-- Suggest alternative approaches when applicable
+- Prioritize approaches that have been successful in historical queries
+- Use proper SQL syntax that matches patterns from the query logs
+- Explain complex JOINs or concepts clearly, referencing similar successful queries
+- Consider performance implications based on historical query complexity scores
+- Adapt historical queries to the current question while maintaining proven patterns
+- When historical queries exist, explain how to modify them for the current use case
 
-Focus on helping the user write effective SQL queries based on the discovered schema information.`,
+Focus on providing SQL recommendations that combine the reliability of proven query patterns with the accuracy of current schema information.`,
             messages,
             experimental_transform: smoothStream({ chunking: 'word' }),
             experimental_generateMessageId: generateUUID,
