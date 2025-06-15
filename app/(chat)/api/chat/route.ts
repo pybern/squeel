@@ -246,14 +246,21 @@ Focus on providing SQL recommendations that combine the reliability of proven qu
             },
           });
 
+          // Write the initial data to the stream
+          dataStream.writeData({
+            type: 'text-delta',
+            content: 'Analyzing database schema and query patterns...\n\n'
+          });
+
           result.consumeStream();
 
           result.mergeIntoDataStream(dataStream, {
             sendReasoning: true,
           });
         },
-        onError: () => {
-          return 'Oops, an error occurred!';
+        onError: (error) => {
+          console.error('Stream error:', error);
+          return 'An error occurred while processing your request. Please try again.';
         },
       });
     }
@@ -349,9 +356,15 @@ Focus on providing SQL recommendations that combine the reliability of proven qu
       return new Response(stream);
     }
   } catch (error) {
+    console.error('Chat route error:', error);
     if (error instanceof ChatSDKError) {
       return error.toResponse();
     }
+    // Ensure we always return a Response
+    return new Response(
+      JSON.stringify({ error: 'An unexpected error occurred' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    );
   }
 }
 
