@@ -16,14 +16,26 @@ interface IntentResult {
 }
 
 export default async function suggestTables(userMessage: string, intent: IntentResult, messages: any[], selectedCollectionId = 'all') {
-  console.log("Table agent called with:", { userMessage, intent, selectedCollectionId })
+  console.log("Table agent called with:", {
+    userMessage,
+    intent,
+    selectedCollectionId,
+    collectionDetails: {
+      value: selectedCollectionId,
+      type: typeof selectedCollectionId,
+      isDefault: selectedCollectionId === 'all'
+    }
+  })
+
+  let allToolCalls: any[] = [];
+  let allToolResults: any[] = [];
 
   const {
     text: result,
     toolCalls,
     toolResults,
   } = await generateText({
-    model: azure("gpt-4o-mini"),
+    model: azure("gpt-4o"),
     system: `You are a database schema expert. Your job is to help users find relevant database tables and columns.
 
 When the user asks about database tables, you MUST:
@@ -110,14 +122,27 @@ User's context:
       }),
     },
     maxSteps: 2, // Allow for tool call and response
+    onStepFinish: ({ text, toolCalls, toolResults, finishReason, usage }) => {
+      console.log("Step finished:", {
+        text,
+        toolCalls,
+        toolResults,
+        finishReason,
+        usage
+      });
+
+      // Accumulate tool calls and results
+      if (toolCalls) allToolCalls.push(...toolCalls);
+      if (toolResults) allToolResults.push(...toolResults);
+    }
   })
 
   console.log("Table agent results:", {
     result,
-    toolCallsCount: toolCalls?.length || 0,
-    toolResultsCount: toolResults?.length || 0,
-    toolCalls: toolCalls?.map((tc) => ({ type: tc.toolName, args: tc.args })),
-    toolResults: toolResults?.map((tr) => ({ type: tr.toolName, result: tr.result })),
+    toolCallsCount: allToolCalls.length,
+    toolResultsCount: allToolResults.length,
+    toolCalls: allToolCalls.map((tc) => ({ type: tc.toolName, args: tc.args })),
+    toolResults: allToolResults.map((tr) => ({ type: tr.toolName, result: tr.result })),
   })
 
   return result

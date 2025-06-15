@@ -3,20 +3,22 @@ import { generateObject } from 'ai';
 import { z } from 'zod';
 
 export default async function classifyIntent(userMessage: string) {
+    console.log('Intent agent called with message:', userMessage);
 
-    const {object : intent} = await generateObject({
-        model: azure('gpt-4o-mini'),
-        schema: z.object({
-            isSqlRelated: z.boolean().describe('Whether the user question is related to SQL, databases, or data queries'),
-            confidence: z.number().min(0).max(1).describe('Confidence score for the classification'),
-            businessDomains: z.array(z.object({
-                domain: z.enum(['finance', 'sales', 'marketing', 'hr', 'operations', 'inventory', 'customer-service', 'analytics', 'custom']).describe('Business domain/workspace'),
-                relevance: z.number().min(0).max(1).describe('Relevance score for this domain'),
-                workspaceType: z.enum(['system', 'custom']).describe('Type of workspace - system (predefined) or custom (user-defined)')
-            })).describe('Relevant business domains if SQL-related'),
-            reasoning: z.string().describe('Brief explanation of the classification decision')
-        }),
-        prompt: `You are an expert at classifying user questions and mapping them to business domains for SQL query assistance.
+    try {
+        const { object: intent } = await generateObject({
+            model: azure('gpt-4o-mini'),
+            schema: z.object({
+                isSqlRelated: z.boolean().describe('Whether the user question is related to SQL, databases, or data queries'),
+                confidence: z.number().min(0).max(1).describe('Confidence score for the classification'),
+                businessDomains: z.array(z.object({
+                    domain: z.enum(['finance', 'sales', 'marketing', 'hr', 'operations', 'inventory', 'customer-service', 'analytics', 'custom']).describe('Business domain/workspace'),
+                    relevance: z.number().min(0).max(1).describe('Relevance score for this domain'),
+                    workspaceType: z.enum(['system', 'custom']).describe('Type of workspace - system (predefined) or custom (user-defined)')
+                })).describe('Relevant business domains if SQL-related'),
+                reasoning: z.string().describe('Brief explanation of the classification decision')
+            }),
+            prompt: `You are an expert at classifying user questions and mapping them to business domains for SQL query assistance.
 
 Your task is to:
 1. Determine if the user's question is SQL-related (involves databases, tables, data exploration, data queries, analytics, reporting, etc.)
@@ -43,7 +45,18 @@ Guidelines:
 - Be concise but clear in reasoning
 
 Analyze this user question and classify it:\n\nUser Question: ${userMessage}`,
-    })
+        });
 
-    return intent;
+        console.log('Intent classification result:', intent);
+        return intent;
+    } catch (error) {
+        console.error('Error in intent classification:', error);
+        // Return a default intent that's not SQL-related in case of error
+        return {
+            isSqlRelated: false,
+            confidence: 0,
+            businessDomains: [],
+            reasoning: 'Error occurred during intent classification'
+        };
+    }
 }
