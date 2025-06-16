@@ -1,96 +1,333 @@
-<a href="https://chat.vercel.ai/">
-  <img alt="Next.js 14 and App Router-ready AI chatbot." src="app/(chat)/opengraph-image.png">
-  <h1 align="center">Chat SDK</h1>
-</a>
+# Squeel - Agentic SQL Analysis System
 
 <p align="center">
-    Chat SDK is a free, open-source template built with Next.js and the AI SDK that helps you quickly build powerful chatbot applications.
+    An intelligent SQL analysis system powered by AI agents that work together to provide comprehensive database insights and query assistance.
 </p>
 
 <p align="center">
-  <a href="https://chat-sdk.dev"><strong>Read Docs</strong></a> ·
-  <a href="#features"><strong>Features</strong></a> ·
-  <a href="#model-providers"><strong>Model Providers</strong></a> ·
-  <a href="#deploy-your-own"><strong>Deploy Your Own</strong></a> ·
-  <a href="#running-locally"><strong>Running locally</strong></a>
+  <a href="#overview"><strong>Overview</strong></a> ·
+  <a href="#agentic-workflow"><strong>Agentic Workflow</strong></a> ·
+  <a href="#agents-in-detail"><strong>Agents in Detail</strong></a> ·
+  <a href="#how-it-works"><strong>How It Works</strong></a> ·
+  <a href="#setup"><strong>Setup</strong></a>
 </p>
-<br/>
 
-## Features
+## Overview
 
-- [Next.js](https://nextjs.org) App Router
-  - Advanced routing for seamless navigation and performance
-  - React Server Components (RSCs) and Server Actions for server-side rendering and increased performance
-- [AI SDK](https://sdk.vercel.ai/docs)
-  - Unified API for generating text, structured objects, and tool calls with LLMs
-  - Hooks for building dynamic chat and generative user interfaces
-  - Supports xAI (default), OpenAI, Fireworks, and other model providers
-- [shadcn/ui](https://ui.shadcn.com)
-  - Styling with [Tailwind CSS](https://tailwindcss.com)
-  - Component primitives from [Radix UI](https://radix-ui.com) for accessibility and flexibility
-- Data Persistence
-  - [Neon Serverless Postgres](https://vercel.com/marketplace/neon) for saving chat history and user data
-  - [Vercel Blob](https://vercel.com/storage/blob) for efficient file storage
-- [Auth.js](https://authjs.dev)
-  - Simple and secure authentication
+Squeel is an advanced SQL analysis system that uses multiple AI agents working in coordination to provide intelligent database query assistance. The system automatically classifies user questions, identifies relevant database tables, searches historical query patterns, and executes safe SQL queries with detailed analysis.
 
-## Model Providers
+## Agentic Workflow
 
-This template ships with [xAI](https://x.ai) `grok-2-1212` as the default chat model. However, with the [AI SDK](https://sdk.vercel.ai/docs), you can switch LLM providers to [OpenAI](https://openai.com), [Anthropic](https://anthropic.com), [Cohere](https://cohere.com/), and [many more](https://sdk.vercel.ai/providers/ai-sdk-providers) with just a few lines of code.
+The system employs a sophisticated multi-agent architecture where each agent has a specialized role:
 
-## Deploy Your Own
-
-You can deploy your own version of the Next.js AI Chatbot to Vercel with one click:
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fai-chatbot&env=AUTH_SECRET&envDescription=Learn+more+about+how+to+get+the+API+Keys+for+the+application&envLink=https%3A%2F%2Fgithub.com%2Fvercel%2Fai-chatbot%2Fblob%2Fmain%2F.env.example&demo-title=AI+Chatbot&demo-description=An+Open-Source+AI+Chatbot+Template+Built+With+Next.js+and+the+AI+SDK+by+Vercel.&demo-url=https%3A%2F%2Fchat.vercel.ai&products=%5B%7B%22type%22%3A%22integration%22%2C%22protocol%22%3A%22ai%22%2C%22productSlug%22%3A%22grok%22%2C%22integrationSlug%22%3A%22xai%22%7D%2C%7B%22type%22%3A%22integration%22%2C%22protocol%22%3A%22storage%22%2C%22productSlug%22%3A%22neon%22%2C%22integrationSlug%22%3A%22neon%22%7D%2C%7B%22type%22%3A%22integration%22%2C%22protocol%22%3A%22storage%22%2C%22productSlug%22%3A%22upstash-kv%22%2C%22integrationSlug%22%3A%22upstash%22%7D%2C%7B%22type%22%3A%22blob%22%7D%5D)
-
-## Running locally
-
-You will need to use the environment variables [defined in `.env.example`](.env.example) to run Next.js AI Chatbot. It's recommended you use [Vercel Environment Variables](https://vercel.com/docs/projects/environment-variables) for this, but a `.env` file is all that is necessary.
-
-> Note: You should not commit your `.env` file or it will expose secrets that will allow others to control access to your various AI and authentication provider accounts.
-
-1. Install Vercel CLI: `npm i -g vercel`
-2. Link local instance with Vercel and GitHub accounts (creates `.vercel` directory): `vercel link`
-3. Download your environment variables: `vercel env pull`
-
-```bash
-pnpm install
-pnpm dev
+```mermaid
+graph TD
+    A[User Query] --> B[Intent Agent]
+    B --> C{SQL Related?}
+    C -->|Yes| D[Table Agent]
+    C -->|Yes| E[Query Log Agent]
+    C -->|Yes| F[Analyst Agent]
+    C -->|No| G[Standard Chat Response]
+    
+    D --> H[Table Schema Results]
+    E --> I[Historical Query Patterns]
+    F --> J[SQL Execution & Analysis]
+    
+    H --> K[Response Synthesis]
+    I --> K
+    J --> K
+    K --> L[Final Response to User]
+    
+    subgraph "Parallel Processing"
+        D
+        E
+    end
+    
+    subgraph "Database Operations"
+        M[Vector Search for Tables]
+        N[Vector Search for Queries]
+        O[Safe SQL Execution]
+        D --> M
+        E --> N
+        F --> O
+    end
 ```
 
-Your app template should now be running on [localhost:3000](http://localhost:3000).
+## Agents in Detail
+
+### 1. Intent Agent
+**Location**: `lib/ai/agents/intent-agent.ts`
+
+**Purpose**: Classifies user queries and determines if they're SQL-related
+
+**Key Functions**:
+- Analyzes user messages to determine if they involve SQL, databases, or data queries
+- Maps queries to business domains (finance, sales, marketing, HR, etc.)
+- Provides confidence scores and reasoning for classifications
+- Distinguishes between system-defined and custom business domains
+
+**Output**: Intent classification with business domain mapping and confidence scores
+
+### 2. Table Agent
+**Location**: `lib/ai/agents/table-agent.ts`
+
+**Purpose**: Identifies relevant database tables and columns using semantic search
+
+**Key Functions**:
+- Uses embedding similarity to find relevant tables
+- Searches across database schemas using vector similarity
+- Filters results by collection/database ID
+- Groups results by table name with column details
+- Provides table relevance scores
+
+**Tools**:
+- `find_relevant_tables`: Semantic search for database tables using embeddings
+
+**Output**: Structured information about relevant tables, columns, and their relationships
+
+### 3. Query Log Agent
+**Location**: `lib/ai/agents/query-log-agent.ts`
+
+**Purpose**: Searches historical query patterns for similar use cases
+
+**Key Functions**:
+- Finds similar historical queries using embedding similarity
+- Filters by query type (SELECT, INSERT, UPDATE, DELETE)
+- Categorizes queries by semantic meaning
+- Provides actual SQL code examples from historical logs
+- Analyzes query complexity and patterns
+
+**Tools**:
+- `find_relevant_queries`: Semantic search for historical SQL queries using embeddings
+
+**Output**: Historical query patterns with SQL examples and complexity analysis
+
+### 4. Analyst Agent
+**Location**: `lib/ai/agents/analyst-agent.ts`
+
+**Purpose**: Executes SQL queries safely and provides comprehensive analysis
+
+**Key Functions**:
+- Validates SQL queries for safety (only SELECT operations allowed)
+- Executes queries with timeouts and resource limits
+- Generates performance insights and optimization suggestions
+- Provides query execution statistics
+- Offers concrete recommendations based on results
+
+**Tools**:
+- `execute_sql_query`: Safe SQL execution with analysis
+- `analyze_query_performance`: Performance analysis and optimization suggestions
+
+**Safety Features**:
+- Query validation to prevent dangerous operations
+- Connection pooling with limits
+- 30-second query timeout
+- Resource usage monitoring
+
+## How It Works
+
+### 1. Query Classification
+When a user submits a question, the **Intent Agent** first analyzes it to determine:
+- Is this SQL-related?
+- What business domains are relevant?
+- What's the confidence level?
+
+### 2. Parallel Information Gathering
+If the query is SQL-related, two agents work in parallel:
+
+**Table Agent**:
+- Generates embeddings for the user's question
+- Searches vector database for similar table schemas
+- Returns relevant tables with column information
+
+**Query Log Agent**:
+- Searches historical query embeddings
+- Finds similar past queries with actual SQL code
+- Provides patterns and complexity analysis
+
+### 3. Query Execution & Analysis
+The **Analyst Agent** takes the results from the previous agents and:
+- Synthesizes table schema information with historical patterns
+- Generates and executes safe SQL queries
+- Provides performance analysis and optimization suggestions
+- Generates insights based on query results
+
+### 4. Response Synthesis
+The system combines all agent outputs to provide:
+- Relevant table schemas and relationships
+- Historical query patterns and examples
+- Executed query results with analysis
+- Performance recommendations
+- Suggested alternative approaches
+
+## Key Features
+
+### Safety & Security
+- **Query Validation**: Only SELECT queries are allowed
+- **Timeout Protection**: 30-second execution limit
+- **Resource Limits**: Connection pooling and resource monitoring
+- **Dangerous Keyword Filtering**: Prevents harmful operations
+
+### Performance Optimization
+- **Parallel Agent Execution**: Table and Query Log agents run simultaneously
+- **Vector Search**: Fast semantic similarity search for tables and queries
+- **Connection Pooling**: Efficient database connection management
+- **Query Performance Analysis**: Automatic optimization suggestions
+
+### Business Domain Intelligence
+- **Domain Mapping**: Automatic classification into business domains
+- **Collection Filtering**: Support for multiple database collections
+- **Historical Pattern Learning**: Learns from successful query patterns
+- **Context-Aware Responses**: Tailored responses based on business context
+
+## Setup
+
+### Prerequisites
+- Node.js 18+
+- PostgreSQL database
+- Supabase account (for vector embeddings)
+- Azure OpenAI API access
+
+### Environment Variables
+```bash
+POSTGRES_URL=your_postgres_connection_string
+SUPABASE_URL=your_supabase_url
+SUPABASE_ANON_KEY=your_supabase_anon_key
+AZURE_OPENAI_API_KEY=your_azure_openai_key
+AZURE_OPENAI_ENDPOINT=your_azure_openai_endpoint
+```
+
+### Installation
+```bash
+npm install
+npm run dev
+```
+
+### Database Setup
+The system requires vector embeddings stored in Supabase with the following functions:
+- `match_table_embeddings`: For table schema search
+- `match_query_embeddings`: For historical query search
 
 ## Development Mode Authentication Bypass
 
-For easier development and testing, this application includes an authentication bypass feature that works automatically in development mode (`NODE_ENV=development`).
+For easier development and testing, the application includes an authentication bypass feature:
 
-### How It Works
+- **Development Mode**: Automatic mock user session, no OAuth setup required
+- **Production Mode**: Full authentication flow with configured OAuth providers
+- **Quick Start**: Simply run `npm run dev` and access `localhost:3000`
 
-- **No Setup Required**: Developers can run the application without configuring OAuth providers or authentication services
-- **Automatic Mock Session**: A mock user session is automatically provided in development mode
-- **Full Feature Access**: All application features (chat, history, file uploads, etc.) work without authentication
-- **Production Safety**: The bypass only works in development - production deployments use normal authentication
+## Example: Real Agent Workflow
 
-### Development vs Production
+Here's a real example of how the agents work together to answer the question **"how much is the largest account?"**
 
-**Development Mode (`npm run dev`):**
-- Authentication middleware is bypassed
-- Mock user session is automatically created
-- No OAuth configuration needed
-- All API endpoints work without authentication
+### 1. Intent Agent Classification
+```json
+{
+  "isSqlRelated": true,
+  "confidence": 0.9,
+  "businessDomains": [
+    { "domain": "finance", "relevance": 0.8, "workspaceType": "system" },
+    { "domain": "analytics", "relevance": 0.6, "workspaceType": "system" }
+  ],
+  "reasoning": "The question is SQL-related as it involves retrieving data about accounts, likely from a database. The finance domain is relevant due to the context of accounts, while analytics is relevant for data analysis."
+}
+```
 
-**Production Mode:**
-- Normal NextAuth authentication flow is enforced
-- OAuth providers must be configured
-- All security measures are active
-- Authentication is required for all protected routes
+### 2. Table Agent Results
+**Found 3 relevant tables** with semantic similarity scores:
 
-### Quick Start for Developers
+```javascript
+[
+  {
+    table_name: 'accounts',
+    db_id: 'small_bank_1',
+    columns: [
+      { column_name: 'name', column_type: 'text' },
+      { column_name: 'customer_id', column_type: 'integer' }
+    ],
+    similarity: 0.358711085242699
+  },
+  {
+    table_name: 'checking',
+    db_id: 'small_bank_1', 
+    columns: [
+      { column_name: 'balance', column_type: 'numeric' }
+    ],
+    similarity: 0.316891548077741
+  },
+  {
+    table_name: 'savings',
+    db_id: 'small_bank_1',
+    columns: [
+      { column_name: 'balance', column_type: 'numeric' }
+    ],
+    similarity: 0.311994355202072
+  }
+]
+```
 
-1. Clone the repository
-2. Run `npm install` (or `pnpm install`)  
-3. Run `npm run dev` (or `pnpm dev`)
-4. Open [localhost:3000](http://localhost:3000) - no authentication required!
+**Table Agent Analysis**:
+- Identified `checking` and `savings` tables contain balance information
+- Suggested queries for finding largest balances across account types
+- Recommended UNION approach for cross-table comparison
 
-This feature significantly reduces the barrier to entry for new developers and makes local development much more efficient.
+### 3. Query Log Agent Results
+```javascript
+{
+  queries: [],
+  searchQuery: "largest account balance maximum",
+  resultsCount: 0,
+  selectedCollection: "small_bank_1"
+}
+```
+
+**Query Log Agent Response**:
+- No historical queries found for this specific pattern
+- Provided SQL query recommendations based on table structure
+- Suggested multiple approaches with performance tips
+
+### 4. Analyst Agent Execution
+**Executed 2 SQL queries in parallel**:
+
+**Query 1**: `SELECT MAX(balance) AS largest_checking_balance FROM checking;`
+- **Result**: $10,000.00
+- **Execution time**: 269ms
+- **Row count**: 1
+
+**Query 2**: `SELECT MAX(balance) AS largest_savings_balance FROM savings;`
+- **Result**: $15,000.00  
+- **Execution time**: 558ms
+- **Row count**: 1
+
+**Analyst Agent Insights**:
+- Fast query execution (< 1 second for both)
+- Well-optimized queries
+- Clear comparison between account types
+- Recommendations for JOIN queries if customer details needed
+
+### 5. Final Synthesis
+The system combined all agent outputs to provide:
+- **Answer**: Largest account balance is $15,000.00 (from savings)
+- **Context**: Comparison between checking ($10,000) and savings ($15,000)
+- **SQL Examples**: Multiple query approaches with explanations
+- **Performance Analysis**: Fast execution times indicate good optimization
+- **Recommendations**: Suggestions for extended queries with customer information
+
+This example demonstrates how the multi-agent system provides comprehensive analysis beyond just answering the question, including context, alternatives, and optimization insights.
+
+## Architecture Benefits
+
+### Modularity
+Each agent has a single responsibility, making the system maintainable and extensible.
+
+### Scalability
+Agents can be scaled independently based on workload requirements.
+
+### Accuracy
+Multiple specialized agents provide more accurate and comprehensive responses than a single general-purpose agent.
+
+### Safety
+Multi-layer validation ensures safe query execution and prevents harmful operations.
+
+### Learning
+The system learns from historical query patterns to improve future recommendations.
