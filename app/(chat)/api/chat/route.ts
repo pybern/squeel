@@ -42,6 +42,7 @@ import { ChatSDKError } from '@/lib/errors';
 import classifyIntent from '@/lib/ai/agents/intent-agent';
 import suggestTables from '@/lib/ai/agents/table-agent';
 import suggestQueryLogs from '@/lib/ai/agents/query-log-agent';
+import runAnalystAgent from '@/lib/ai/agents/analyst-agent';
 
 export const maxDuration = 60;
 
@@ -160,20 +161,34 @@ export async function POST(request: Request) {
       const tableAgentResult = await suggestTables(messages[messages.length - 1].content, intent, messages, selectedCollectionId);
       const queryLogAgentResult = await suggestQueryLogs(messages[messages.length - 1].content, intent, messages, selectedCollectionId);
 
+      // Run analyst agent to execute queries and provide insights
+      console.log('Running analyst agent for SQL execution and analysis');
+      const analystResult = await runAnalystAgent(
+        messages[messages.length - 1].content,
+        intent,
+        messages,
+        tableAgentResult,
+        queryLogAgentResult,
+        selectedCollectionId
+      );
+
       stream = createDataStream({
         execute: (dataStream) => {
           const result = streamText({
             model: myProvider.languageModel('lg-model'),
-            system: `You are an expert SQL analyst and query architect. Your role is to help users build effective SQL queries based on both database schema information and historical query patterns discovered by specialized agents.
+            system: `You are an expert SQL analyst and query architect. Your role is to synthesize insights from multiple specialized agents to provide comprehensive SQL analysis and recommendations.
 
 ## Your Task:
-Analyze the results from both the table agent and query log agent to provide the most accurate and effective SQL recommendations for the user's question.
+Analyze and synthesize the results from the table agent, query log agent, and analyst agent to provide the most complete and actionable SQL insights for the user's question.
 
 ## Table Agent Analysis Results:
 ${tableAgentResult}
 
 ## Query Log Agent Analysis Results:
 ${queryLogAgentResult}
+
+## Analyst Agent Execution Results:
+${analystResult}
 
 ## Instructions:
 1. **Cross-Reference Information**: Compare table schema findings with historical query patterns
