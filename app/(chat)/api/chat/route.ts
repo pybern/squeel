@@ -82,6 +82,9 @@ export async function POST(request: Request) {
     const { id, message, selectedChatModel, selectedVisibilityType, selectedCollectionId } =
       requestBody;
 
+    console.log('Backend received selectedCollectionId:', selectedCollectionId);
+    console.log('Full requestBody:', JSON.stringify(requestBody, null, 2));
+
     const session = await getSessionOrDev();
 
     if (!session?.user) {

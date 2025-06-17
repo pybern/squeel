@@ -51,6 +51,10 @@ export function Chat({
     initialCollectionId: 'all',
   });
 
+  useEffect(() => {
+    console.log('Chat component: collectionId changed to:', collectionId);
+  }, [collectionId]);
+
   const {
     messages,
     setMessages,
@@ -70,13 +74,16 @@ export function Chat({
     sendExtraMessageFields: true,
     generateId: generateUUID,
     fetch: fetchWithErrorHandlers,
-    experimental_prepareRequestBody: (body) => ({
-      id,
-      message: body.messages.at(-1),
-      selectedChatModel: initialChatModel,
-      selectedVisibilityType: visibilityType,
-      selectedCollectionId: collectionId,
-    }),
+    experimental_prepareRequestBody: (body) => {
+      console.log('Preparing request body with collectionId:', collectionId);
+      return {
+        id,
+        message: body.messages.at(-1),
+        selectedChatModel: initialChatModel,
+        selectedVisibilityType: visibilityType,
+        selectedCollectionId: collectionId,
+      };
+    },
     onFinish: () => {
       mutate(unstable_serialize(getChatHistoryPaginationKey));
     },

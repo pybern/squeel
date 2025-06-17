@@ -30,10 +30,12 @@ export function useCollectionSelection({
     );
 
     const collectionId = useMemo(() => {
+        console.log('useCollectionSelection: Current collection ID:', localCollectionId);
         return localCollectionId;
     }, [localCollectionId]);
 
     const setCollectionId = (updatedCollectionId: CollectionType) => {
+        console.log('useCollectionSelection: Setting collection ID to:', updatedCollectionId);
         // Store in localStorage
         if (typeof window !== 'undefined') {
             localStorage.setItem(`${COLLECTION_STORAGE_KEY}-${chatId}`, updatedCollectionId);
