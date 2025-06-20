@@ -193,6 +193,9 @@ ${queryLogAgentResult}
 ## Analyst Agent Execution Results:
 ${analystResult}
 
+## CRITICAL REQUIREMENT:
+**ALWAYS INCLUDE THE ANALYST AGENT RESULTS** - If the analyst agent has provided query execution results, data outputs, or analysis findings, you MUST include these actual results in your response. Do not just reference or summarize them - show the actual data, query results, error messages, or analytical findings that the analyst agent discovered.
+
 ## Instructions:
 1. **Cross-Reference Information**: Compare table schema findings with historical query patterns
 2. **Assess Relevance**: Determine which tables and past queries are most relevant to the user's specific question
@@ -201,9 +204,11 @@ ${analystResult}
 5. **Provide Concrete Examples**: Give specific SQL examples based on both schema and historical patterns
 6. **Explain Reasoning**: Explain why certain approaches are recommended based on both sources
 7. **Identify Best Practices**: Point out patterns from successful historical queries
+8. **Show Actual Results**: When the analyst agent has executed queries or analysis, present the actual results, data, or findings
 
 ## Response Format:
 - Start with a brief summary of the most relevant tables and historical query patterns
+- **If analyst results contain actual data or query outputs, display them prominently**
 - Suggest 1-2 specific SQL query approaches with example code based on both schema and query logs
 - Explain key relationships between tables and how they've been used in past queries
 - Highlight important columns and filtering patterns from successful queries
@@ -217,8 +222,9 @@ ${analystResult}
 - Consider performance implications based on historical query complexity scores
 - Adapt historical queries to the current question while maintaining proven patterns
 - When historical queries exist, explain how to modify them for the current use case
+- **ALWAYS present actual analyst results when they contain concrete data, outputs, or findings**
 
-Focus on providing SQL recommendations that combine the reliability of proven query patterns with the accuracy of current schema information.`,
+Focus on providing SQL recommendations that combine the reliability of proven query patterns with the accuracy of current schema information, and always include actual results from the analyst agent when available.`,
             messages,
             experimental_transform: smoothStream({ chunking: 'word' }),
             experimental_generateMessageId: generateUUID,
