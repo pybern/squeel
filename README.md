@@ -560,3 +560,269 @@ Multi-layer validation ensures safe query execution and prevents harmful operati
 
 ### Learning
 The system learns from historical query patterns to improve future recommendations.
+
+## Customizing Documents and Artifacts
+
+The `createDocument` tool generates structured documents and artifacts based on user queries. The system supports multiple document types and can be customized to include default items and content to documents.
+
+### Document Types (Artifact Kinds)
+
+The system supports four main document types defined in `lib/artifacts/server.ts`:
+
+- **`text`**: Markdown-based documents for comprehensive reports and analysis
+- **`code`**: Code snippets and SQL query examples  
+- **`image`**: Image generation and editing artifacts
+- **`sheet`**: Spreadsheet-like data presentations
+
+### How Document Creation Works
+
+When the AI calls `createDocument({ title, kind, sqlAnalysisResults })`, the system:
+
+1. **Routes to Handler**: Finds the appropriate document handler in `documentHandlersByArtifactKind` array
+2. **Generates Content**: Calls the handler's `onCreateDocument` method with context
+3. **Streams Response**: Streams generated content back to the user interface
+4. **Saves Document**: Persists the final document to the database
+
+### Customizing Document Handlers
+
+#### Text Documents (`artifacts/text/server.ts`)
+
+The text document handler supports SQL analysis results and can be customized to include default sections:
+
+```typescript
+export const textDocumentHandler = createDocumentHandler<'text'>({
+  kind: 'text',
+  onCreateDocument: async ({ title, dataStream, sqlAnalysisResults }) => {
+    // Custom system prompt for SQL analysis documents
+    const systemPrompt = sqlAnalysisResults
+      ? `You are creating a comprehensive SQL analysis document. Use the provided SQL analysis results to create a well-structured report with clear sections. Include all the important findings, query results, and recommendations. Format using markdown with appropriate headings and code blocks.
+
+SQL Analysis Results:
+${sqlAnalysisResults}`
+      : 'Write about the given topic. Markdown is supported. Use headings wherever appropriate.';
+
+    // Add default sections or templates here
+    const prompt = sqlAnalysisResults
+      ? `Create a comprehensive SQL analysis document titled "${title}" based on the provided SQL analysis results. Structure it with clear sections and include all the important findings.`
+      : title;
+    
+    // Stream generation with customized prompts
+    const { fullStream } = streamText({
+      model: myProvider.languageModel('artifact-model'),
+      system: systemPrompt,
+      experimental_transform: smoothStream({ chunking: 'word' }),
+      prompt: prompt,
+    });
+    
+    // Process and return content...
+  }
+});
+```
+
+**Adding Default Content to Text Documents:**
+
+```typescript
+// Example: Add default sections for SQL analysis documents
+const systemPrompt = sqlAnalysisResults
+  ? `Create a SQL analysis document with these default sections:
+  
+## Executive Summary
+[Brief overview of key findings]
+
+## Database Schema Analysis  
+[Table structures and relationships]
+
+## Query Analysis
+[SQL queries and execution results]
+
+## Performance Insights
+[Optimization recommendations]
+
+## Recommendations
+[Next steps and best practices]
+
+${sqlAnalysisResults}`
+  : 'Your custom default prompt here...';
+```
+
+#### Code Documents (`artifacts/code/server.ts`)
+
+Code documents use structured object generation and can include default code templates:
+
+```typescript
+export const codeDocumentHandler = createDocumentHandler<'code'>({
+  kind: 'code',
+  onCreateDocument: async ({ title, dataStream }) => {
+    // Customize the code generation prompt
+    const { fullStream } = streamObject({
+      model: myProvider.languageModel('artifact-model'),
+      system: codePrompt, // Define in lib/ai/prompts.ts
+      prompt: title,
+      schema: z.object({
+        code: z.string(),
+      }),
+    });
+    
+    // Add default code template or boilerplate here
+    // Process streaming object and return formatted code
+  },
+});
+```
+
+**Adding Default Code Templates:**
+
+```typescript
+// Example: Add SQL query template for code documents
+const codePrompt = `Generate SQL code based on the request. Always include:
+
+1. Clear comments explaining the query purpose
+2. Proper formatting and indentation  
+3. Error handling where appropriate
+4. Example output or expected results
+
+Default template:
+-- Purpose: [Query description]
+-- Expected output: [Description of results]
+
+SELECT 
+    -- Add columns here
+FROM 
+    -- Add tables here
+WHERE 
+    -- Add conditions here;
+`;
+```
+
+### Adding Custom Document Types
+
+To add a new document type (e.g., `chart` or `report`):
+
+1. **Create Handler File**: `artifacts/[type]/server.ts`
+2. **Implement Handler**: Use `createDocumentHandler` helper
+3. **Register Handler**: Add to `documentHandlersByArtifactKind` array
+4. **Update Types**: Add to `artifactKinds` array
+
+```typescript
+// artifacts/report/server.ts
+export const reportDocumentHandler = createDocumentHandler<'report'>({
+  kind: 'report',
+  onCreateDocument: async ({ title, dataStream, sqlAnalysisResults }) => {
+    // Custom report generation logic
+    const defaultTemplate = `
+# ${title}
+
+## Overview
+[Executive summary]
+
+## Key Metrics
+[Important numbers and KPIs]
+
+## Detailed Analysis
+${sqlAnalysisResults || '[Analysis content]'}
+
+## Conclusions
+[Summary and next steps]
+    `;
+    
+    // Generate content based on template
+    return await generateReportContent(title, defaultTemplate, sqlAnalysisResults);
+  },
+});
+
+// lib/artifacts/server.ts
+export const documentHandlersByArtifactKind: Array<DocumentHandler> = [
+  textDocumentHandler,
+  codeDocumentHandler,
+  imageDocumentHandler,
+  sheetDocumentHandler,
+  reportDocumentHandler, // Add your new handler
+];
+
+export const artifactKinds = ['text', 'code', 'image', 'sheet', 'report'] as const;
+```
+
+### Customizing SQL Analysis Documents
+
+The system has special handling for SQL analysis results. When `createDocument` is called with `sqlAnalysisResults`, it passes the combined analysis from all three agents:
+
+```typescript
+// In app/(chat)/api/chat/route.ts
+tools: {
+  createDocument: createDocument({ session, dataStream }),
+}
+
+// The tool is called with SQL analysis context:
+createDocument({
+  title: "SQL Analysis: Customer Revenue Analysis",
+  kind: "text",
+  sqlAnalysisResults: `
+    Table Agent Results: ${tableAgentResult}
+    Query Log Agent Results: ${queryLogAgentResult}  
+    Analyst Agent Results: ${analystResult}
+  `
+});
+```
+
+**Customizing SQL Document Templates:**
+
+```typescript
+// In artifacts/text/server.ts - customize the SQL analysis template
+const sqlAnalysisTemplate = `
+# ${title}
+
+## 🔍 Analysis Overview
+${extractExecutiveSummary(sqlAnalysisResults)}
+
+## 📊 Database Schema 
+${extractTableAnalysis(sqlAnalysisResults)}
+
+## 📝 Query Execution Results
+${extractQueryResults(sqlAnalysisResults)}
+
+## ⚡ Performance Analysis
+${extractPerformanceInsights(sqlAnalysisResults)}
+
+## 💡 Recommendations
+${extractRecommendations(sqlAnalysisResults)}
+
+## 📋 SQL Code Examples
+\`\`\`sql
+${extractSqlExamples(sqlAnalysisResults)}
+\`\`\`
+`;
+```
+
+### Default Content Strategies
+
+1. **Template-Based**: Pre-define document structure with placeholders
+2. **Context-Aware**: Generate defaults based on document type and input
+3. **Conditional**: Different defaults for SQL vs. general documents
+4. **User-Specific**: Customize based on user preferences or workspace
+
+### Testing Document Customizations
+
+When modifying document handlers, test with different scenarios:
+
+```bash
+# Test SQL analysis documents
+curl -X POST /api/chat \
+  -d '{"message": "Show me the largest customer orders", "selectedCollectionId": "test_db"}'
+
+# Test general text documents  
+curl -X POST /api/chat \
+  -d '{"message": "Create a project planning document"}'
+
+# Test code documents
+curl -X POST /api/chat \
+  -d '{"message": "Generate a SQL query for customer analysis"}'
+```
+
+### Best Practices
+
+1. **Consistent Structure**: Maintain predictable document formats
+2. **Clear Templates**: Use well-defined sections and headings
+3. **Context Awareness**: Adapt content based on available data
+4. **Performance**: Keep default content generation fast
+5. **Extensibility**: Design handlers to support future customizations
+
+The document system is designed to be highly customizable while maintaining consistent behavior across different document types. Modify the handlers in the `artifacts/` directory to customize default content, templates, and generation logic for your specific use cases.
