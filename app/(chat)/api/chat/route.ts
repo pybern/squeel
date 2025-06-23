@@ -123,8 +123,16 @@ export async function POST(request: Request) {
 
     const previousMessages = await getMessagesByChatId({ id });
 
+    // Transform database messages to AI SDK format
+    const transformedMessages = previousMessages.map(msg => ({
+      id: msg.id,
+      role: msg.role as 'user' | 'assistant' | 'system',
+      content: typeof msg.parts === 'string' ? msg.parts : JSON.stringify(msg.parts),
+      experimental_attachments: Array.isArray(msg.attachments) ? msg.attachments : [],
+    }));
+
     const messages = appendClientMessage({
-      messages: previousMessages,
+      messages: transformedMessages,
       message,
     });
 
