@@ -21,6 +21,7 @@ export interface CreateDocumentCallbackProps {
   title: string;
   dataStream: DataStreamWriter;
   session: Session;
+  sqlAnalysisResults?: string;
 }
 
 export interface UpdateDocumentCallbackProps {
@@ -49,6 +50,7 @@ export function createDocumentHandler<T extends ArtifactKind>(config: {
         title: args.title,
         dataStream: args.dataStream,
         session: args.session,
+        sqlAnalysisResults: args.sqlAnalysisResults,
       });
 
       if (args.session?.user?.id) {

@@ -189,7 +189,7 @@ export async function POST(request: Request) {
             system: `You are an expert SQL analyst and query architect. Your role is to synthesize insights from multiple specialized agents to provide comprehensive SQL analysis and recommendations.
 
 ## Your Task:
-Analyze and synthesize the results from the table agent, query log agent, and analyst agent to provide the most complete and actionable SQL insights for the user's question.
+Analyze and synthesize the results from the table agent, query log agent, and analyst agent to provide the most complete and actionable SQL insights for the user's question. When the analysis is comprehensive and valuable, create a document to organize the findings.
 
 ## Table Agent Analysis Results:
 ${tableAgentResult}
@@ -200,8 +200,16 @@ ${queryLogAgentResult}
 ## Analyst Agent Execution Results:
 ${analystResult}
 
-## CRITICAL REQUIREMENT:
-**ALWAYS INCLUDE THE ANALYST AGENT RESULTS** - If the analyst agent has provided query execution results, data outputs, or analysis findings, you MUST include these actual results in your response. Do not just reference or summarize them - show the actual data, query results, error messages, or analytical findings that the analyst agent discovered.
+## CRITICAL REQUIREMENTS:
+1. **ALWAYS INCLUDE THE ANALYST AGENT RESULTS** - If the analyst agent has provided query execution results, data outputs, or analysis findings, you MUST include these actual results in your response.
+2. **CREATE SQL ANALYSIS DOCUMENTS** - Use the createDocument tool to generate organized documents when you have substantial SQL findings:
+   - Use descriptive titles that indicate it's a SQL analysis (e.g., "SQL Analysis: [User Query]")
+   - Choose "text" for comprehensive analysis reports or "code" for SQL query examples
+   - ALWAYS pass the sqlAnalysisResults parameter with the actual combined results from all three agents:
+     * Include tableAgentResult findings
+     * Include queryLogAgentResult findings  
+     * Include analystResult findings
+     * Include your own analysis and recommendations
 
 ## Instructions:
 1. **Cross-Reference Information**: Compare table schema findings with historical query patterns
@@ -212,29 +220,35 @@ ${analystResult}
 6. **Explain Reasoning**: Explain why certain approaches are recommended based on both sources
 7. **Identify Best Practices**: Point out patterns from successful historical queries
 8. **Show Actual Results**: When the analyst agent has executed queries or analysis, present the actual results, data, or findings
+9. **Create Documentation**: Use createDocument tool for substantial analysis to make it easily accessible and reusable
+
+## When to Create Documents:
+- ALWAYS create a SQL analysis document when you have findings from the agents
+- When showing actual query execution results and analysis
+- When providing comprehensive SQL recommendations based on agent findings
+- When you have substantial insights from table analysis and query logs
+
+## Document Types:
+- Use "text" kind for comprehensive SQL analysis reports with sections
+- Use "code" kind when the focus should be primarily on SQL code examples
 
 ## Response Format:
-- Start with a brief summary of the most relevant tables and historical query patterns
-- **If analyst results contain actual data or query outputs, display them prominently**
-- Suggest 1-2 specific SQL query approaches with example code based on both schema and query logs
-- Explain key relationships between tables and how they've been used in past queries
-- Highlight important columns and filtering patterns from successful queries
-- Provide performance tips based on historical query complexity and patterns
-- Suggest alternative approaches when multiple patterns exist
+- Start with a brief summary of findings
+- **Present actual analyst results prominently when available**
+- Use createDocument tool to create a structured SQL analysis document
+- Explain the document's contents and how to use the recommendations
 
-## Guidelines:
-- Prioritize approaches that have been successful in historical queries
-- Use proper SQL syntax that matches patterns from the query logs
-- Explain complex JOINs or concepts clearly, referencing similar successful queries
-- Consider performance implications based on historical query complexity scores
-- Adapt historical queries to the current question while maintaining proven patterns
-- When historical queries exist, explain how to modify them for the current use case
-- **ALWAYS present actual analyst results when they contain concrete data, outputs, or findings**
-
-Focus on providing SQL recommendations that combine the reliability of proven query patterns with the accuracy of current schema information, and always include actual results from the analyst agent when available.`,
+Focus on providing actionable SQL insights and creating well-organized documents that users can reference and build upon.`,
             messages,
+            maxSteps: 5,
+            experimental_activeTools: [
+              'createDocument',
+            ],
             experimental_transform: smoothStream({ chunking: 'word' }),
             experimental_generateMessageId: generateUUID,
+            tools: {
+              createDocument: createDocument({ session, dataStream }),
+            },
             onFinish: async ({ response }) => {
               if (session.user?.id) {
                 try {

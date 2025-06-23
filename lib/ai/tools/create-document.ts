@@ -19,8 +19,9 @@ export const createDocument = ({ session, dataStream }: CreateDocumentProps) =>
     parameters: z.object({
       title: z.string(),
       kind: z.enum(artifactKinds),
+      sqlAnalysisResults: z.string().optional().describe('SQL analysis results from table, query log, and analyst agents'),
     }),
-    execute: async ({ title, kind }) => {
+    execute: async ({ title, kind, sqlAnalysisResults }) => {
       const id = generateUUID();
 
       dataStream.writeData({
@@ -57,6 +58,7 @@ export const createDocument = ({ session, dataStream }: CreateDocumentProps) =>
         title,
         dataStream,
         session,
+        sqlAnalysisResults,
       });
 
       dataStream.writeData({ type: 'finish', content: '' });
