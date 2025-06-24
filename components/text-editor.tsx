@@ -22,6 +22,7 @@ import {
   suggestionsPlugin,
   suggestionsPluginKey,
 } from '@/lib/editor/suggestions';
+import { Markdown } from './markdown';
 
 type EditorProps = {
   content: string;
@@ -41,8 +42,11 @@ function PureEditor({
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<EditorView | null>(null);
 
+  // Check if content contains chart markers
+  const hasCharts = content.includes('[chart:');
+
   useEffect(() => {
-    if (containerRef.current && !editorRef.current) {
+    if (containerRef.current && !editorRef.current && !hasCharts) {
       const state = EditorState.create({
         doc: buildDocumentFromContent(content),
         plugins: [
@@ -74,7 +78,7 @@ function PureEditor({
     };
     // NOTE: we only want to run this effect once
     // eslint-disable-next-line
-  }, []);
+  }, [hasCharts]);
 
   useEffect(() => {
     if (editorRef.current) {
@@ -91,7 +95,7 @@ function PureEditor({
   }, [onSaveContent]);
 
   useEffect(() => {
-    if (editorRef.current && content) {
+    if (editorRef.current && content && !hasCharts) {
       const currentContent = buildContentFromDocument(
         editorRef.current.state.doc,
       );
@@ -123,10 +127,10 @@ function PureEditor({
         editorRef.current.dispatch(transaction);
       }
     }
-  }, [content, status]);
+  }, [content, status, hasCharts]);
 
   useEffect(() => {
-    if (editorRef.current?.state.doc && content) {
+    if (editorRef.current?.state.doc && content && !hasCharts) {
       const projectedSuggestions = projectWithPositions(
         editorRef.current.state.doc,
         suggestions,
@@ -143,7 +147,16 @@ function PureEditor({
       transaction.setMeta(suggestionsPluginKey, { decorations });
       editorRef.current.dispatch(transaction);
     }
-  }, [suggestions, content]);
+  }, [suggestions, content, hasCharts]);
+
+  // If content has charts, render with Markdown component instead of ProseMirror
+  if (hasCharts) {
+    return (
+      <div className="relative prose dark:prose-invert max-w-none">
+        <Markdown>{content}</Markdown>
+      </div>
+    );
+  }
 
   return (
     <div className="relative prose dark:prose-invert" ref={containerRef} />

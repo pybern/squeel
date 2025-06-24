@@ -9,6 +9,7 @@ import {
   PenIcon,
   RedoIcon,
   UndoIcon,
+  LineChartIcon,
 } from '@/components/icons';
 import { Suggestion } from '@/lib/db/schema';
 import { toast } from 'sonner';
@@ -20,7 +21,7 @@ interface TextArtifactMetadata {
 
 export const textArtifact = new Artifact<'text', TextArtifactMetadata>({
   kind: 'text',
-  description: 'Useful for text content, like drafting essays and emails.',
+  description: 'Useful for text content, like drafting essays and emails. Supports embedded interactive charts.',
   initialize: async ({ documentId, setMetadata }) => {
     const suggestions = await getSuggestions({ documentId });
 
@@ -164,13 +165,24 @@ export const textArtifact = new Artifact<'text', TextArtifactMetadata>({
       },
     },
     {
+      icon: <LineChartIcon />,
+      description: 'Add chart visualization',
+      onClick: ({ appendMessage }) => {
+        appendMessage({
+          role: 'user',
+          content:
+            'Please add an interactive chart visualization to illustrate the data. Use the chart marker [chart:chart-bar-label] to embed a bar chart with sample data where appropriate.',
+        });
+      },
+    },
+    {
       icon: <MessageIcon />,
       description: 'Request suggestions',
       onClick: ({ appendMessage }) => {
         appendMessage({
           role: 'user',
           content:
-            'Please add suggestions you have that could improve the writing.',
+            'Please add suggestions you have that could improve the writing and consider adding data visualizations where helpful.',
         });
       },
     },

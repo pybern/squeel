@@ -182,6 +182,23 @@ export async function POST(request: Request) {
         selectedCollectionId
       );
 
+      // Format combined agent results for document creation
+      const combinedAgentResults = `
+=== DATABASE SCHEMA ANALYSIS (Table Agent Results) ===
+${tableAgentResult}
+
+=== HISTORICAL QUERY PATTERNS (Query Log Agent Results) ===
+${queryLogAgentResult}
+
+=== QUERY EXECUTION & DATA ANALYSIS (Analyst Agent Results) ===
+${analystResult}
+
+=== ANALYSIS TIMESTAMP ===
+Analysis performed on: ${new Date().toISOString()}
+Selected Collection: ${selectedCollectionId}
+User Query: "${messages[messages.length - 1].content}"
+      `.trim();
+
       stream = createDataStream({
         execute: (dataStream) => {
           const result = streamText({
@@ -189,56 +206,49 @@ export async function POST(request: Request) {
             system: `You are an expert SQL analyst and query architect. Your role is to synthesize insights from multiple specialized agents to provide comprehensive SQL analysis and recommendations.
 
 ## Your Task:
-Analyze and synthesize the results from the table agent, query log agent, and analyst agent to provide the most complete and actionable SQL insights for the user's question. When the analysis is comprehensive and valuable, create a document to organize the findings.
+Analyze and synthesize the results from the table agent, query log agent, and analyst agent to provide the most complete and actionable SQL insights for the user's question. **ALWAYS create a comprehensive analysis document** to organize and display the final results from all agents.
 
-## Table Agent Analysis Results:
-${tableAgentResult}
-
-## Query Log Agent Analysis Results:
-${queryLogAgentResult}
-
-## Analyst Agent Execution Results:
-${analystResult}
+## Combined Agent Analysis Results:
+${combinedAgentResults}
 
 ## CRITICAL REQUIREMENTS:
-1. **ALWAYS INCLUDE THE ANALYST AGENT RESULTS** - If the analyst agent has provided query execution results, data outputs, or analysis findings, you MUST include these actual results in your response.
-2. **CREATE SQL ANALYSIS DOCUMENTS** - Use the createDocument tool to generate organized documents when you have substantial SQL findings:
-   - Use descriptive titles that indicate it's a SQL analysis (e.g., "SQL Analysis: [User Query]")
-   - Choose "text" for comprehensive analysis reports or "code" for SQL query examples
-   - ALWAYS pass the sqlAnalysisResults parameter with the actual combined results from all three agents:
-     * Include tableAgentResult findings
-     * Include queryLogAgentResult findings  
-     * Include analystResult findings
-     * Include your own analysis and recommendations
 
-## Instructions:
-1. **Cross-Reference Information**: Compare table schema findings with historical query patterns
-2. **Assess Relevance**: Determine which tables and past queries are most relevant to the user's specific question
-3. **Learn from History**: Use successful query patterns from the logs to inform your recommendations
-4. **Suggest Optimized Queries**: Combine schema knowledge with proven query patterns for better results
-5. **Provide Concrete Examples**: Give specific SQL examples based on both schema and historical patterns
-6. **Explain Reasoning**: Explain why certain approaches are recommended based on both sources
-7. **Identify Best Practices**: Point out patterns from successful historical queries
-8. **Show Actual Results**: When the analyst agent has executed queries or analysis, present the actual results, data, or findings
-9. **Create Documentation**: Use createDocument tool for substantial analysis to make it easily accessible and reusable
+### 1. MANDATORY DOCUMENT CREATION
+- **ALWAYS create a SQL analysis document** - this is required for every SQL-related query
+- Use descriptive titles that clearly indicate the analysis scope (e.g., "SQL Analysis: Customer Revenue Trends", "Database Schema Review: Sales Data")
+- Choose "text" kind for comprehensive analysis reports that showcase all agent findings
 
-## When to Create Documents:
-- ALWAYS create a SQL analysis document when you have findings from the agents
-- When showing actual query execution results and analysis
-- When providing comprehensive SQL recommendations based on agent findings
-- When you have substantial insights from table analysis and query logs
+### 2. COMPREHENSIVE AGENT RESULT SYNTHESIS
+- **Combine all three agent results** into a cohesive, professional analysis report
+- Structure the sqlAnalysisResults parameter to include:
+  * Complete table agent findings (relevant tables, columns, relationships)
+  * Query log agent findings (successful patterns, optimizations)
+  * Analyst agent results (actual query results, data insights, performance metrics)
+  * Your synthesis and recommendations combining all agent insights
 
-## Document Types:
-- Use "text" kind for comprehensive SQL analysis reports with sections
-- Use "code" kind when the focus should be primarily on SQL code examples
+### 3. DOCUMENT QUALITY STANDARDS
+- Create professional, actionable reports that display ALL important findings
+- Structure content with clear sections and subsections
+- Include actual data results, query examples, and performance metrics
+- Provide specific, actionable recommendations based on combined agent insights
 
-## Response Format:
-- Start with a brief summary of findings
-- **Present actual analyst results prominently when available**
-- Use createDocument tool to create a structured SQL analysis document
-- Explain the document's contents and how to use the recommendations
+## Analysis Instructions:
+1. **Cross-Reference Information**: Compare schema findings with historical patterns and execution results
+2. **Present Actual Results**: Always include real query results and data insights from the analyst agent
+3. **Identify Patterns**: Highlight successful query patterns and optimization opportunities
+4. **Provide Context**: Explain business relevance and practical applications
+5. **Generate Actionable Insights**: Create specific recommendations users can implement
+6. **Document Everything**: Ensure all valuable findings from each agent are preserved in the artifact
 
-Focus on providing actionable SQL insights and creating well-organized documents that users can reference and build upon.`,
+## Response Approach:
+1. **Brief Introduction**: Summarize what analysis was performed and what agents were used
+2. **Create Analysis Document**: Use createDocument tool with the title describing the analysis and kind="text"
+   - Pass the complete combined agent results in the sqlAnalysisResults parameter
+   - Ensure the document showcases findings from all three agents
+3. **Highlight Key Findings**: Point out the most important discoveries and recommendations
+4. **Explain Next Steps**: Guide users on how to use the analysis document effectively
+
+The goal is to create a comprehensive, professional analysis artifact that serves as a complete reference for the SQL analysis performed by all three specialized agents. The document should be immediately useful and display all the important findings from the table agent, query log agent, and analyst agent.`,
             messages,
             maxSteps: 5,
             experimental_activeTools: [
