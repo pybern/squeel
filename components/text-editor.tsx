@@ -4,7 +4,7 @@ import { exampleSetup } from 'prosemirror-example-setup';
 import { inputRules } from 'prosemirror-inputrules';
 import { EditorState } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
-import React, { memo, useEffect, useRef } from 'react';
+import React, { memo, useEffect, useRef, useMemo } from 'react';
 
 import type { Suggestion } from '@/lib/db/schema';
 import {
@@ -47,30 +47,60 @@ function PureEditor({
   // Ensure suggestions is always a valid array
   const safeSuggestions = Array.isArray(suggestions) ? suggestions : [];
 
+  // Extract chart data from document content if embedded
+  const extractedChartData = useMemo(() => {
+    if (chartData && chartData.length > 0) {
+      // Use provided chart data first
+      return chartData;
+    }
+    
+    // Try to extract from document content
+    if (content) {
+      const chartDataMatch = content.match(/<!-- CHART_DATA:(.*?) -->/s);
+      if (chartDataMatch) {
+        try {
+          const parsedChartData = JSON.parse(chartDataMatch[1]);
+          console.log('📊 Extracted chart data from document content:', parsedChartData);
+          return parsedChartData;
+        } catch (error) {
+          console.error('Error parsing embedded chart data:', error);
+        }
+      }
+    }
+    
+    return [];
+  }, [content, chartData]);
+
+  // Clean content by removing chart data comments for display
+  const cleanContent = useMemo(() => {
+    return content.replace(/<!-- CHART_DATA:.*? -->/gs, '').trim();
+  }, [content]);
+
   // Check if content contains chart markers
-  const hasCharts = content.includes('[chart:');
+  const hasCharts = cleanContent.includes('[chart:');
 
   console.log('Text editor received:', {
     hasCharts,
-    chartDataCount: chartData ? chartData.length : 0,
-    chartData: chartData ? chartData.map(c => ({ title: c?.title, type: c?.type })) : null,
+    chartDataCount: extractedChartData ? extractedChartData.length : 0,
+    chartData: extractedChartData ? extractedChartData.map((c: any) => ({ title: c?.title, type: c?.type })) : null,
     suggestionsCount: safeSuggestions.length,
+    contentLength: cleanContent.length,
   });
 
   // Log detailed chart data for debugging
-  if (chartData && chartData.length > 0) {
-    console.log('Detailed chart data in text editor:', JSON.stringify(chartData, null, 2));
+  if (extractedChartData && extractedChartData.length > 0) {
+    console.log('Detailed chart data in text editor:', JSON.stringify(extractedChartData, null, 2));
   } else if (hasCharts) {
     console.log('Text editor: Content has charts but no chart data received');
   }
 
-  // Use the actual chart data received from the pipeline
-  const effectiveChartData = chartData || [];
+  // Use the extracted chart data
+  const effectiveChartData = extractedChartData || [];
 
   useEffect(() => {
     if (containerRef.current && !editorRef.current && !hasCharts) {
       const state = EditorState.create({
-        doc: buildDocumentFromContent(content),
+        doc: buildDocumentFromContent(cleanContent),
         plugins: [
           ...exampleSetup({ schema: documentSchema, menuBar: false }),
           inputRules({
@@ -117,13 +147,13 @@ function PureEditor({
   }, [onSaveContent]);
 
   useEffect(() => {
-    if (editorRef.current && content && !hasCharts) {
+    if (editorRef.current && cleanContent && !hasCharts) {
       const currentContent = buildContentFromDocument(
         editorRef.current.state.doc,
       );
 
       if (status === 'streaming') {
-        const newDocument = buildDocumentFromContent(content);
+        const newDocument = buildDocumentFromContent(cleanContent);
 
         const transaction = editorRef.current.state.tr.replaceWith(
           0,
@@ -136,8 +166,8 @@ function PureEditor({
         return;
       }
 
-      if (currentContent !== content) {
-        const newDocument = buildDocumentFromContent(content);
+      if (currentContent !== cleanContent) {
+        const newDocument = buildDocumentFromContent(cleanContent);
 
         const transaction = editorRef.current.state.tr.replaceWith(
           0,
@@ -149,10 +179,10 @@ function PureEditor({
         editorRef.current.dispatch(transaction);
       }
     }
-  }, [content, status, hasCharts]);
+  }, [cleanContent, status, hasCharts]);
 
   useEffect(() => {
-    if (editorRef.current?.state.doc && content && !hasCharts) {
+    if (editorRef.current?.state.doc && cleanContent && !hasCharts) {
       const validSuggestions = safeSuggestions || [];
       const projectedSuggestions = projectWithPositions(
         editorRef.current.state.doc,
@@ -170,13 +200,13 @@ function PureEditor({
       transaction.setMeta(suggestionsPluginKey, { decorations });
       editorRef.current.dispatch(transaction);
     }
-  }, [safeSuggestions, content, hasCharts]);
+  }, [safeSuggestions, cleanContent, hasCharts]);
 
   // If content has charts, render with Markdown component instead of ProseMirror
   if (hasCharts) {
     return (
       <div className="relative prose dark:prose-invert max-w-none">
-        <Markdown chartData={effectiveChartData}>{content}</Markdown>
+        <Markdown chartData={effectiveChartData}>{cleanContent}</Markdown>
       </div>
     );
   }

@@ -236,6 +236,549 @@ Charts are implemented using:
 - **Markdown Integration**: Custom markdown renderer
 - **Type Safety**: Full TypeScript support
 
+## Chart Data Pipeline & Document Creation System
+
+This section provides comprehensive documentation for the chart data pipeline that enables embedding real SQL query results as interactive charts within documents.
+
+### Overview
+
+The chart data pipeline consists of multiple components working together to:
+1. **Extract chart-worthy data** from SQL query results in the Analyst Agent
+2. **Stream chart data** through the document creation pipeline
+3. **Embed chart data persistently** in document content
+4. **Render interactive charts** in the user interface
+
+### Architecture Flow
+
+```mermaid
+graph TD
+    A[SQL Query Execution] --> B[Chart Data Extraction]
+    B --> C[Document Creation Tool]
+    C --> D[Text Document Handler]
+    D --> E[Chart Data Embedding]
+    E --> F[Content Streaming]
+    F --> G[Client Reception]
+    G --> H[Chart Rendering]
+    
+    subgraph "Server Side"
+        A
+        B
+        C
+        D
+        E
+        F
+    end
+    
+    subgraph "Client Side"
+        G
+        H
+    end
+    
+    subgraph "Persistence"
+        I[Document Storage]
+        J[Chart Data Extraction on Load]
+        E --> I
+        I --> J
+        J --> H
+    end
+```
+
+### Component Details
+
+#### 1. Analyst Agent Chart Data Extraction
+**Location**: `lib/ai/agents/analyst-agent.ts`
+
+**Purpose**: Analyzes SQL query results and extracts chart-worthy data patterns
+
+**Key Functions**:
+```typescript
+interface ChartData {
+    type: 'bar' | 'line' | 'pie' | 'area'
+    title: string
+    data: Array<{
+        label: string
+        value: number
+        [key: string]: any
+    }>
+    xAxis?: string
+    yAxis?: string
+    description?: string
+}
+
+const extractChartData = (query: string, results: QueryResult): ChartData[]
+```
+
+**Chart Pattern Recognition**:
+- **Pattern 1**: Two-column data (categorical + numeric) → Bar charts
+- **Pattern 2**: Multi-series numeric data → Multi-series bar charts  
+- **Pattern 3**: Time series data → Line charts
+- **Fallback**: Generic chart generation for any numeric data
+
+**Example Output**:
+```json
+[
+  {
+    "type": "bar",
+    "title": "savings_balance by account_name",
+    "xAxis": "account_name",
+    "yAxis": "savings_balance",
+    "description": "Distribution of savings_balance across different account_name values",
+    "data": [
+      { "label": "Wang", "value": 999999999 },
+      { "label": "O'mahony", "value": 230000 },
+      { "label": "Brown", "value": 200000 }
+    ]
+  }
+]
+```
+
+#### 2. Chat Route Integration
+**Location**: `app/(chat)/api/chat/route.ts`
+
+**Purpose**: Extracts chart data from analyst results and passes to document creation
+
+**Key Logic**:
+```typescript
+// Extract chart data from analyst results
+let chartDataForDocument = null;
+try {
+    const chartDataMatch = analystResult.match(/CHART_DATA_START(.*?)CHART_DATA_END/s);
+    if (chartDataMatch) {
+        chartDataForDocument = JSON.parse(chartDataMatch[1]);
+    }
+} catch (error) {
+    console.log('Error parsing chart data:', error);
+}
+
+// Pass to createDocument tool
+tools: {
+    createDocument: createDocument({ session, dataStream, chartData: chartDataForDocument }),
+}
+```
+
+#### 3. Document Creation Tool
+**Location**: `lib/ai/tools/create-document.ts`
+
+**Purpose**: Orchestrates document creation and chart data flow
+
+**Interface**:
+```typescript
+interface CreateDocumentProps {
+    session: Session;
+    dataStream: DataStreamWriter;
+    chartData?: Array<{
+        type: 'bar' | 'line' | 'pie' | 'area';
+        title: string;
+        data: Array<{
+            label: string;
+            value: number;
+            [key: string]: any;
+        }>;
+        xAxis?: string;
+        yAxis?: string;
+        description?: string;
+    }>;
+}
+```
+
+**Execution Flow**:
+1. Send artifact metadata (`kind`, `id`, `title`, `clear`)
+2. Call appropriate document handler with chart data
+3. Send finish event
+
+#### 4. Text Document Handler
+**Location**: `artifacts/text/server.ts`
+
+**Purpose**: Generates document content and embeds chart data for persistence
+
+**Chart Data Integration**:
+```typescript
+onCreateDocument: async ({ title, dataStream, sqlAnalysisResults, chartData }) => {
+    // 1. Generate AI content with chart markers
+    const systemPrompt = chartData && chartData.length > 0 ? `
+## Available Chart Data:
+You have access to ${chartData.length} chart dataset(s) from the SQL analysis:
+${chartData.map((chart, index) => `
+${index + 1}. ${chart.title} (${chart.type} chart)
+   - Use marker: [chart:chart-data-${index}]
+`).join('')}` : '';
+
+    // 2. Stream content generation
+    for await (const delta of fullStream) {
+        if (type === 'text-delta') {
+            draftContent += textDelta;
+            dataStream.writeData({ type: 'text-delta', content: textDelta });
+        }
+    }
+
+    // 3. Embed chart data in document for persistence
+    if (chartData && chartData.length > 0) {
+        const chartDataBlock = `\n\n<!-- CHART_DATA:${JSON.stringify(chartData)} -->\n\n`;
+        draftContent += chartDataBlock;
+        
+        // Also stream for immediate use
+        dataStream.writeData({
+            type: 'text-delta',
+            content: `__CHART_DATA_START__${JSON.stringify(chartData)}__CHART_DATA_END__`,
+        });
+    }
+
+    return draftContent;
+}
+```
+
+#### 5. Data Stream Handler
+**Location**: `components/data-stream-handler.tsx`
+
+**Purpose**: Processes streaming data on the client side
+
+**Stream Types**:
+```typescript
+export type DataStreamDelta = {
+    type: 'text-delta' | 'code-delta' | 'sheet-delta' | 'image-delta' 
+        | 'title' | 'id' | 'suggestion' | 'clear' | 'finish' | 'kind' | 'chart-data';
+    content: string | Suggestion | any[];
+};
+```
+
+**Processing Logic**:
+```typescript
+useEffect(() => {
+    (newDeltas as DataStreamDelta[]).forEach((delta: DataStreamDelta) => {
+        const artifactDefinition = artifactDefinitions.find(
+            (def) => def.kind === artifact.kind,
+        );
+
+        if (artifactDefinition?.onStreamPart) {
+            artifactDefinition.onStreamPart({
+                streamPart: delta,
+                setArtifact,
+                setMetadata,
+            });
+        }
+    });
+}, [dataStream, setArtifact, setMetadata, artifact]);
+```
+
+#### 6. Text Artifact Client
+**Location**: `artifacts/text/client.tsx`
+
+**Purpose**: Handles chart data reception and metadata management
+
+**Stream Part Processing**:
+```typescript
+onStreamPart: ({ streamPart, setMetadata, setArtifact }) => {
+    if (streamPart.type === 'text-delta') {
+        const content = streamPart.content as string;
+        
+        // Parse chart data from text deltas
+        if (content.includes('__CHART_DATA_START__') && content.includes('__CHART_DATA_END__')) {
+            const chartDataMatch = content.match(/__CHART_DATA_START__(.*?)__CHART_DATA_END__/s);
+            if (chartDataMatch) {
+                try {
+                    const chartData = JSON.parse(chartDataMatch[1]);
+                    setMetadata((metadata) => ({
+                        ...metadata,
+                        chartData: chartData,
+                    }));
+                    return; // Don't add marker to content
+                } catch (error) {
+                    console.error('Error parsing chart data:', error);
+                }
+            }
+        }
+        
+        // Regular text content
+        setArtifact((draftArtifact) => ({
+            ...draftArtifact,
+            content: draftArtifact.content + content,
+            status: 'streaming',
+        }));
+    }
+}
+```
+
+**Metadata Interface**:
+```typescript
+interface TextArtifactMetadata {
+    suggestions: Array<Suggestion>;
+    chartData?: any[];
+}
+```
+
+#### 7. Text Editor Component
+**Location**: `components/text-editor.tsx`
+
+**Purpose**: Renders content and extracts chart data for persistence
+
+**Chart Data Extraction**:
+```typescript
+// Extract chart data from document content if embedded
+const extractedChartData = useMemo(() => {
+    if (chartData && chartData.length > 0) {
+        return chartData; // Use streamed data first
+    }
+    
+    // Extract from persistent document content
+    if (content) {
+        const chartDataMatch = content.match(/<!-- CHART_DATA:(.*?) -->/s);
+        if (chartDataMatch) {
+            try {
+                const parsedChartData = JSON.parse(chartDataMatch[1]);
+                return parsedChartData;
+            } catch (error) {
+                console.error('Error parsing embedded chart data:', error);
+            }
+        }
+    }
+    
+    return [];
+}, [content, chartData]);
+
+// Clean content for display (remove chart data comments)
+const cleanContent = useMemo(() => {
+    return content.replace(/<!-- CHART_DATA:.*? -->/gs, '').trim();
+}, [content]);
+```
+
+**Rendering Logic**:
+```typescript
+// If content has charts, use Markdown renderer
+if (hasCharts) {
+    return (
+        <div className="relative prose dark:prose-invert max-w-none">
+            <Markdown chartData={effectiveChartData}>{cleanContent}</Markdown>
+        </div>
+    );
+}
+```
+
+#### 8. Markdown Component
+**Location**: `components/markdown.tsx`
+
+**Purpose**: Renders markdown content with embedded chart components
+
+**Chart Marker Processing**:
+```typescript
+// Chart marker pattern: [chart:chart-type]
+const CHART_MARKER_REGEX = /\[chart:([^\]]+)\]/g;
+
+const createComponentsWithChartData = (chartData?: any[]) => ({
+    ...components,
+    p: ({ node, children, ...props }: any) => {
+        const content = React.Children.toArray(children).join('');
+        
+        // Check for chart markers
+        const chartMatch = content.match(/^\[chart:([^\]]+)\]$/);
+        if (chartMatch) {
+            const chartType = chartMatch[1] as ChartComponentType;
+            return (
+                <div className="my-6">
+                    <ChartComponent type={chartType} chartData={chartData} />
+                </div>
+            );
+        }
+        
+        // Regular paragraph
+        return <p {...props}>{children}</p>;
+    },
+});
+```
+
+#### 9. Chart Components
+**Location**: `components/chart-components.tsx`
+
+**Purpose**: Renders interactive charts with real data
+
+**Component Registry**:
+```typescript
+export const chartComponents = {
+    'chart-bar-label': ChartBarLabel,
+    'chart-data-0': (props: any) => ChartDataRenderer({ ...props, index: 0 }),
+    'chart-data-1': (props: any) => ChartDataRenderer({ ...props, index: 1 }),
+    'chart-data-2': (props: any) => ChartDataRenderer({ ...props, index: 2 }),
+    // ... more indexed chart types
+} as const
+```
+
+**Data-Driven Rendering**:
+```typescript
+function ChartDataRenderer({ index, chartData }: { index: number; chartData?: any[] }) {
+    if (!chartData || !chartData[index]) {
+        return <div>No chart data available for index {index}</div>;
+    }
+
+    const data = chartData[index];
+    
+    switch (data.type) {
+        case 'bar':
+            return <ChartDataBar data={data} />;
+        case 'line':
+            return <ChartDataLine data={data} />;
+        default:
+            return <ChartDataBar data={data} />;
+    }
+}
+```
+
+### Chart Data Persistence Strategy
+
+#### Problem Solved
+Chart data needs to persist when users navigate away and return to documents later.
+
+#### Solution: Dual Storage Approach
+
+1. **Streaming for Immediate Display**:
+   - Chart data streamed during document creation
+   - Immediate chart rendering for real-time experience
+
+2. **Embedded for Persistence**:
+   - Chart data embedded as HTML comments in document content
+   - Extracted when document is loaded later
+   - Invisible to users but preserves chart functionality
+
+#### Persistence Format
+```html
+<!-- CHART_DATA:[{"type":"bar","title":"Account Balances","data":[...]}] -->
+```
+
+#### Benefits
+- ✅ Charts display immediately during creation
+- ✅ Charts persist across navigation and sessions
+- ✅ No database schema changes required
+- ✅ Works with existing document storage
+- ✅ Backward compatible with existing documents
+
+### Chart Marker System
+
+#### Available Chart Types
+
+| Marker | Component | Description |
+|--------|-----------|-------------|
+| `[chart:chart-bar-label]` | `ChartBarLabel` | Sample bar chart with labels |
+| `[chart:chart-data-0]` | `ChartDataRenderer` | First chart from SQL data |
+| `[chart:chart-data-1]` | `ChartDataRenderer` | Second chart from SQL data |
+| `[chart:chart-data-N]` | `ChartDataRenderer` | Nth chart from SQL data |
+
+#### Usage in Documents
+
+**AI-Generated Content**:
+```markdown
+# SQL Analysis Report
+
+## Query Results
+Our analysis of the account balances reveals:
+
+[chart:chart-data-0]
+
+The chart above shows the distribution of account balances across customers.
+```
+
+**Manual Usage**:
+```markdown
+# Custom Report
+
+## Sample Data Visualization
+[chart:chart-bar-label]
+
+This shows sample monthly visitor data.
+```
+
+### Development Guidelines
+
+#### Adding New Chart Types
+
+1. **Create Chart Component**:
+```typescript
+// In components/chart-components.tsx
+export function ChartNewType() {
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle>New Chart Type</CardTitle>
+            </CardHeader>
+            <CardContent>
+                {/* Chart implementation */}
+            </CardContent>
+        </Card>
+    );
+}
+```
+
+2. **Register Component**:
+```typescript
+export const chartComponents = {
+    // ... existing components
+    'chart-new-type': ChartNewType,
+} as const;
+```
+
+3. **Update Type Definitions**:
+```typescript
+export type ChartComponentType = keyof typeof chartComponents;
+```
+
+4. **Update Documentation**:
+- Add to system prompts
+- Update README examples
+- Include in chart marker table
+
+#### Debugging Chart Data Flow
+
+**Server-Side Debugging**:
+```typescript
+// In analyst agent
+console.log('Chart data extracted:', chartData);
+
+// In chat route  
+console.log('Chart data for document:', chartDataForDocument);
+
+// In text server
+console.log('Chart data received:', chartData);
+```
+
+**Client-Side Debugging**:
+```typescript
+// In text editor
+console.log('Extracted chart data:', extractedChartData);
+
+// In chart components
+console.log('Chart data received:', chartData);
+```
+
+#### Testing Chart Pipeline
+
+1. **Run SQL Query**: Execute query that returns chart-worthy data
+2. **Check Server Logs**: Verify chart data extraction and streaming
+3. **Check Browser Console**: Verify chart data reception and parsing
+4. **Navigate Away/Back**: Test persistence functionality
+5. **Verify Chart Rendering**: Ensure charts display correctly
+
+#### Performance Considerations
+
+- **Chart Data Size**: Keep chart data arrays reasonable (< 1000 points)
+- **Embedding Impact**: Chart data adds to document size
+- **Parsing Performance**: JSON parsing happens on each document load
+- **Memory Usage**: Multiple charts in one document increase memory usage
+
+### Troubleshooting Common Issues
+
+#### Charts Not Displaying
+1. Check if chart data is being extracted from SQL results
+2. Verify chart data is being streamed to client
+3. Ensure chart markers are present in document content
+4. Check browser console for parsing errors
+
+#### Charts Lost on Navigation
+1. Verify chart data is embedded in document content
+2. Check if extraction logic is working on document load
+3. Ensure clean content is being used for display
+
+#### Performance Issues
+1. Limit chart data points to reasonable numbers
+2. Consider pagination for large datasets
+3. Monitor memory usage with multiple charts
+
 ## Architecture Benefits
 
 ### Modularity
@@ -255,548 +798,6 @@ The system learns from historical query patterns to improve future recommendatio
 
 ### Interactive Visualization
 Rich data visualization capabilities enhance understanding and presentation of insights.
-
-## Customizing Documents and Artifacts
-
-The `createDocument` tool generates structured documents and artifacts based on user queries. The system supports multiple document types and can be customized to include default items and content to documents.
-
-### Document Types (Artifact Kinds)
-
-The system supports four main document types defined in `lib/artifacts/server.ts`:
-
-- **`text`**: Markdown-based documents for comprehensive reports and analysis (now with chart support)
-- **`code`**: Code snippets and SQL query examples  
-- **`image`**: Image generation and editing artifacts
-- **`sheet`**: Spreadsheet-like data presentations
-
-### How Document Creation Works
-
-When the AI calls `createDocument({ title, kind, sqlAnalysisResults })`, the system:
-
-1. **Routes to Handler**: Finds the appropriate document handler in `documentHandlersByArtifactKind` array
-2. **Generates Content**: Calls the handler's `onCreateDocument` method with context
-3. **Streams Response**: Streams generated content back to the user interface
-4. **Renders Charts**: Automatically converts chart markers to interactive components
-5. **Saves Document**: Persists the final document to the database
-
-### Customizing Document Handlers
-
-#### Text Documents (`artifacts/text/server.ts`)
-
-The text document handler supports SQL analysis results and chart integration:
-
-```typescript
-export const textDocumentHandler = createDocumentHandler<'text'>({
-  kind: 'text',
-  onCreateDocument: async ({ title, dataStream, sqlAnalysisResults }) => {
-    // Custom system prompt for SQL analysis documents with chart capabilities
-    const systemPrompt = sqlAnalysisResults
-      ? `You are creating a comprehensive SQL analysis document with chart integration capabilities.
-      
-## Chart Integration Capabilities:
-You can embed interactive charts in your documents using chart markers. Available chart types:
-- \`[chart:chart-bar-label]\` - Displays a bar chart with labels (sample data: monthly desktop visitors)
-
-Include charts in your analysis where data visualization would be helpful.`
-      : `Write about the given topic. You can embed charts using [chart:chart-bar-label].`;
-    
-    // Generate content with chart support
-    // ...
-  }
-});
-```
-
-**Adding Default Chart Examples:**
-
-```typescript
-// Example: Include default chart examples in documents
-const prompt = sqlAnalysisResults
-  ? `Create a comprehensive SQL Analysis Report titled "${title}" that includes:
-  - Database schema findings
-  - Historical query patterns  
-  - Actual execution results and insights
-  - Data visualizations using chart markers where appropriate
-  
-  Consider adding [chart:chart-bar-label] to illustrate key findings.`
-  : title;
-```
-
-### Chart Component Development
-
-#### Adding New Chart Types
-
-1. **Create Chart Component**: Add to `components/chart-components.tsx`
-2. **Register Component**: Add to `chartComponents` registry
-3. **Update Types**: Add to `ChartComponentType` union
-4. **Document Usage**: Update system prompts and documentation
-
-Example:
-```typescript
-// Add new line chart component
-export function ChartLineExample() {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Line Chart Example</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {/* Line chart implementation */}
-      </CardContent>
-    </Card>
-  );
-}
-
-// Register the component
-export const chartComponents = {
-  'chart-bar-label': ChartBarLabel,
-  'chart-line-example': ChartLineExample, // New chart type
-} as const;
-```
-
-## SQL Query Safety
-
-The system implements comprehensive safety measures for SQL query execution:
-
-```typescript
-const validateQuery = (query: string): { isValid: boolean; error?: string } => {
-  const trimmedQuery = query.trim().toLowerCase();
-  
-  // Must be SELECT only
-  if (!trimmedQuery.startsWith('select')) {
-    return { isValid: false, error: 'Only SELECT queries are allowed' };
-  }
-  
-  // Block dangerous keywords
-  const dangerousKeywords = [
-    'drop', 'delete', 'insert', 'update', 'alter', 'truncate',
-    'create', 'grant', 'revoke', 'exec', 'execute', 'call',
-    'declare', 'merge', 'replace', 'rename', 'comment'
-  ];
-  
-  // Additional validation logic...
-}
-```
-
-**Connection Management**:
-- Maximum 5 concurrent connections
-- 30-second idle timeout
-- 10-second connection timeout
-- 30-second query execution timeout
-
-## Usage Examples
-
-### Creating SQL Analysis with Charts
-
-```markdown
-# Customer Analytics Report
-
-## Executive Summary
-This analysis examines customer behavior patterns across multiple dimensions.
-
-## Revenue Trends
-[chart:chart-bar-label]
-
-The visualization above shows monthly revenue trends with clear seasonal patterns.
-
-## Key Insights
-- Q4 shows highest performance
-- Mobile traffic increasing 25% YoY
-- Customer retention improved significantly
-```
-
-### Interactive Chart Features
-
-- **Hover Tooltips**: Detailed information on data points
-- **Responsive Design**: Adapts to screen size
-- **Accessibility**: Screen reader compatible
-- **Professional Styling**: Matches document theme
-
-## Development and Deployment
-
-### Prerequisites
-- Node.js 18+
-- PostgreSQL database
-- Redis (for resumable streams)
-
-### Environment Setup
-```bash
-# Install dependencies
-pnpm install
-
-# Set up environment variables
-cp .env.example .env.local
-
-# Run development server
-pnpm dev
-```
-
-### Chart Development
-```bash
-# Test chart components
-pnpm test:charts
-
-# Build with chart support
-pnpm build
-```
-
-## Contributing
-
-When contributing chart components:
-
-1. **Follow Naming Convention**: Use descriptive names like `chart-bar-label`
-2. **Add Documentation**: Include usage examples and descriptions
-3. **Test Interactivity**: Ensure charts work across devices
-4. **Maintain Accessibility**: Include proper ARIA labels
-5. **Update Registry**: Add new components to the registry
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Example: Real Agent Workflow
-
-Here's a real example of how the agents work together to answer the question **"how much is the largest account?"**
-
-### 1. Intent Agent Classification
-```json
-{
-  "isSqlRelated": true,
-  "confidence": 0.9,
-  "businessDomains": [
-    { "domain": "finance", "relevance": 0.8, "workspaceType": "system" },
-    { "domain": "analytics", "relevance": 0.6, "workspaceType": "system" }
-  ],
-  "reasoning": "The question is SQL-related as it involves retrieving data about accounts, likely from a database. The finance domain is relevant due to the context of accounts, while analytics is relevant for data analysis."
-}
-```
-
-### 2. Table Agent Results
-**Found 3 relevant tables** with semantic similarity scores:
-
-```javascript
-[
-  {
-    table_name: 'accounts',
-    db_id: 'small_bank_1',
-    columns: [
-      { column_name: 'name', column_type: 'text' },
-      { column_name: 'customer_id', column_type: 'integer' }
-    ],
-    similarity: 0.358711085242699
-  },
-  {
-    table_name: 'checking',
-    db_id: 'small_bank_1', 
-    columns: [
-      { column_name: 'balance', column_type: 'numeric' }
-    ],
-    similarity: 0.316891548077741
-  },
-  {
-    table_name: 'savings',
-    db_id: 'small_bank_1',
-    columns: [
-      { column_name: 'balance', column_type: 'numeric' }
-    ],
-    similarity: 0.311994355202072
-  }
-]
-```
-
-**Table Agent Analysis**:
-- Identified `checking` and `savings` tables contain balance information
-- Suggested queries for finding largest balances across account types
-- Recommended UNION approach for cross-table comparison
-
-### 3. Query Log Agent Results
-```javascript
-{
-  queries: [],
-  searchQuery: "largest account balance maximum",
-  resultsCount: 0,
-  selectedCollection: "small_bank_1"
-}
-```
-
-**Query Log Agent Response**:
-- No historical queries found for this specific pattern
-- Provided SQL query recommendations based on table structure
-- Suggested multiple approaches with performance tips
-
-### 4. Analyst Agent Execution
-**Executed 2 SQL queries in parallel**:
-
-**Query 1**: `SELECT MAX(balance) AS largest_checking_balance FROM checking;`
-- **Result**: $10,000.00
-- **Execution time**: 269ms
-- **Row count**: 1
-
-**Query 2**: `SELECT MAX(balance) AS largest_savings_balance FROM savings;`
-- **Result**: $15,000.00  
-- **Execution time**: 558ms
-- **Row count**: 1
-
-**Analyst Agent Insights**:
-- Fast query execution (< 1 second for both)
-- Well-optimized queries
-- Clear comparison between account types
-- Recommendations for JOIN queries if customer details needed
-
-### 5. Final Synthesis
-The system combined all agent outputs to provide:
-- **Answer**: Largest account balance is $15,000.00 (from savings)
-- **Context**: Comparison between checking ($10,000) and savings ($15,000)
-- **SQL Examples**: Multiple query approaches with explanations
-- **Performance Analysis**: Fast execution times indicate good optimization
-- **Recommendations**: Suggestions for extended queries with customer information
-
-This example demonstrates how the multi-agent system provides comprehensive analysis beyond just answering the question, including context, alternatives, and optimization insights.
-
-## Agent Prompts and Tool Calling
-
-### 1. Intent Agent - Structured Object Generation
-
-**Model**: `gpt-4o-mini` (Azure OpenAI)  
-**Type**: `generateObject` with Zod schema validation
-
-**Prompt System**:
-```
-You are an expert at classifying user questions and mapping them to business domains for SQL query assistance.
-
-Your task is to:
-1. Determine if the user's question is SQL-related (involves databases, tables, data exploration, data queries, analytics, reporting, etc.)
-2. If SQL-related, identify which business domains/workspaces are most relevant
-3. Classify workspaces as either "system" (predefined business areas) or "custom" (user-specific domains)
-
-Available business domains:
-- finance: Financial data, accounting, budgets, revenue, expenses
-- sales: Sales performance, leads, deals, customer acquisition
-- marketing: Campaigns, leads, conversion rates, marketing metrics
-- hr: Employee data, payroll, performance, recruitment
-- operations: Business processes, logistics, supply chain
-- inventory: Stock levels, product management, warehousing
-- customer-service: Support tickets, customer satisfaction, service metrics
-- analytics: General data analysis, reporting, dashboards
-- custom: User-specific or industry-specific domains not covered above
-
-Guidelines:
-- Mark as SQL-related if the question involves: data retrieval, database queries, reporting, analytics, data analysis, table operations
-- For system workspaces: use predefined domains that clearly match the question
-- For custom workspaces: when the domain is very specific to user's business or not well covered by system domains
-- Provide relevance scores (0-1) for each domain
-- Include confidence score for overall classification
-- Be concise but clear in reasoning
-```
-
-**Output Schema**:
-```typescript
-{
-  isSqlRelated: boolean,
-  confidence: number, // 0-1
-  businessDomains: Array<{
-    domain: 'finance' | 'sales' | 'marketing' | 'hr' | 'operations' | 'inventory' | 'customer-service' | 'analytics' | 'custom',
-    relevance: number, // 0-1
-    workspaceType: 'system' | 'custom'
-  }>,
-  reasoning: string
-}
-```
-
-### 2. Table Agent - Tool-Based Search
-
-**Model**: `gpt-4o` (Azure OpenAI)  
-**Type**: `generateText` with tools, `maxSteps: 2`
-
-**System Prompt**:
-```
-You are a database schema expert. Your job is to help users find relevant database tables and columns.
-
-When the user asks about database tables, you MUST:
-1. ALWAYS use the find_relevant_tables tool first to search for relevant tables
-2. After getting the results, provide a clear, helpful response that explains:
-   - Which tables are most relevant to their question
-   - What columns are available in those tables
-   - How the tables could be used to answer their question
-   - Suggest potential SQL queries if appropriate
-
-You MUST call the find_relevant_tables tool before providing any response.
-```
-
-**Available Tools**:
-```typescript
-find_relevant_tables: {
-  description: "Search for relevant database tables using embedding similarity",
-  parameters: {
-    query: string, // The search query to find relevant tables
-    limit?: number, // Maximum number of tables to return (default: 5)
-    table_name?: string // Optional specific table name to filter results
-  },
-  execute: async ({ query, limit = 5, table_name }) => {
-    // 1. Generate embedding for search query
-    // 2. Call Supabase RPC: match_table_embeddings
-    // 3. Filter by collection ID and table name
-    // 4. Group results by table name with columns
-    // 5. Return formatted table information with similarity scores
-  }
-}
-```
-
-### 3. Query Log Agent - Historical Pattern Search
-
-**Model**: `gpt-4o` (Azure OpenAI)  
-**Type**: `generateText` with tools, `maxSteps: 2`
-
-**System Prompt**:
-```
-You are a SQL query expert. Your job is to help users find relevant SQL queries from historical query logs.
-
-When the user asks about SQL queries, database operations, or data analysis, you MUST:
-1. ALWAYS use the find_relevant_queries tool first to search for similar queries
-2. After getting the results, provide a clear, helpful response that explains:
-   - Which historical queries are most relevant to their question
-   - What patterns or approaches were used in similar queries
-   - Show actual SQL code examples from the query logs when available
-   - How these queries could be adapted for their specific needs
-   - Explain the complexity and semantic category of the queries
-   - Compare different SQL approaches found in the logs
-   - Suggest modifications or improvements based on the historical patterns
-
-The query logs contain both descriptive text (query_text) and actual SQL code (sql_query). Use both to provide comprehensive examples and explanations.
-```
-
-**Available Tools**:
-```typescript
-find_relevant_queries: {
-  description: "Search for relevant SQL queries from query logs using embedding similarity",
-  parameters: {
-    query: string, // The search query to find relevant SQL queries
-    limit?: number, // Maximum number of queries to return (default: 5)
-    query_type?: string, // Optional filter by query type (SELECT, INSERT, UPDATE, DELETE)
-    category?: string // Optional filter by semantic category
-  },
-  execute: async ({ query, limit = 5, query_type, category }) => {
-    // 1. Generate embedding for search query
-    // 2. Call Supabase RPC: match_query_embeddings
-    // 3. Filter by collection ID, query type, and category
-    // 4. Format results with SQL code, complexity scores, and metadata
-    // 5. Return historical query patterns with similarity scores
-  }
-}
-```
-
-### 4. Analyst Agent - SQL Execution and Analysis
-
-**Model**: `gpt-4o` (Azure OpenAI)  
-**Type**: `generateText` with tools, `maxSteps: 5`
-
-**System Prompt**:
-```
-You are an expert SQL analyst with deep database knowledge. Your role is to analyze database schemas, execute SQL queries safely, and provide meaningful insights from the results.
-
-## Your Task:
-1. Analyze the provided table schema and query logs
-2. Generate and execute SQL queries to answer the user's question
-3. Provide insights and recommendations based on the results
-4. Ensure all queries are safe and optimized
-
-## Guidelines:
-- Only execute SELECT queries - no data modification allowed
-- Analyze query performance and suggest optimizations
-- Provide clear explanations of the results
-- Suggest alternative approaches when applicable
-- Use insights from historical queries to inform your analysis
-- Include relevant business context in your analysis
-
-You MUST use the execute_sql_query tool to run queries and analyze results. Always explain your approach and findings.
-```
-
-**Available Tools**:
-```typescript
-execute_sql_query: {
-  description: "Execute a SQL query safely and return results with analysis",
-  parameters: {
-    query: string, // The SQL SELECT query to execute
-    purpose: string // Brief explanation of what this query is trying to accomplish
-  },
-  execute: async ({ query, purpose }) => {
-    // 1. Validate query (only SELECT allowed)
-    // 2. Create database connection with limits
-    // 3. Execute query with 30-second timeout
-    // 4. Generate performance insights
-    // 5. Return results with analysis and recommendations
-  }
-}
-
-analyze_query_performance: {
-  description: "Analyze query performance and suggest optimizations",
-  parameters: {
-    query: string, // The SQL query to analyze
-    executionTime: number, // Query execution time in milliseconds
-    rowCount: number // Number of rows returned
-  },
-  execute: async ({ query, executionTime, rowCount }) => {
-    // 1. Analyze execution time thresholds
-    // 2. Check for performance anti-patterns
-    // 3. Suggest query optimizations
-    // 4. Return performance score and recommendations
-  }
-}
-```
-
-### Tool Calling Flow
-
-1. **Intent Agent**: No tools - uses structured generation to classify queries
-2. **Table Agent**: Single tool call to `find_relevant_tables` → Response with table analysis
-3. **Query Log Agent**: Single tool call to `find_relevant_queries` → Response with historical patterns
-4. **Analyst Agent**: Multiple tool calls:
-   - Primary: `execute_sql_query` (can be called multiple times)
-   - Secondary: `analyze_query_performance` for optimization analysis
-
-### Safety and Validation
-
-**Query Validation** (Analyst Agent):
-```typescript
-const validateQuery = (query: string): { isValid: boolean; error?: string } => {
-  const trimmedQuery = query.trim().toLowerCase();
-  
-  // Must be SELECT only
-  if (!trimmedQuery.startsWith('select')) {
-    return { isValid: false, error: 'Only SELECT queries are allowed' };
-  }
-  
-  // Block dangerous keywords
-  const dangerousKeywords = [
-    'drop', 'delete', 'insert', 'update', 'alter', 'truncate',
-    'create', 'grant', 'revoke', 'exec', 'execute', 'call',
-    'declare', 'merge', 'replace', 'rename', 'comment'
-  ];
-  
-  // Additional validation logic...
-}
-```
-
-**Connection Management**:
-- Maximum 5 concurrent connections
-- 30-second idle timeout
-- 10-second connection timeout
-- 30-second query execution timeout
-
-## Architecture Benefits
-
-### Modularity
-Each agent has a single responsibility, making the system maintainable and extensible.
-
-### Scalability
-Agents can be scaled independently based on workload requirements.
-
-### Accuracy
-Multiple specialized agents provide more accurate and comprehensive responses than a single general-purpose agent.
-
-### Safety
-Multi-layer validation ensures safe query execution and prevents harmful operations.
-
-### Learning
-The system learns from historical query patterns to improve future recommendations.
 
 ## Customizing Documents and Artifacts
 

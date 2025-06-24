@@ -146,6 +146,21 @@ Make this a professional, actionable report that displays all the important find
       }
     }
 
+    // Embed chart data directly in the document content for persistence
+    if (chartData && chartData.length > 0) {
+      console.log('📊 Embedding chart data in document content for persistence');
+      const chartDataBlock = `\n\n<!-- CHART_DATA:${JSON.stringify(chartData)} -->\n\n`;
+      draftContent += chartDataBlock;
+
+      // Also stream the chart data to the client for immediate use
+      dataStream.writeData({
+        type: 'text-delta',
+        content: `__CHART_DATA_START__${JSON.stringify(chartData)}__CHART_DATA_END__`,
+      });
+
+      console.log('✅ Chart data embedded in document and streamed to client');
+    }
+
     return draftContent;
   },
   onUpdateDocument: async ({ document, description, dataStream }) => {

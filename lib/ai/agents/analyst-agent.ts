@@ -59,9 +59,16 @@ const createAnalysisConnection = () => {
 const validateQuery = (query: string): { isValid: boolean; error?: string } => {
     const trimmedQuery = query.trim().toLowerCase();
 
-    // Check if it's a SELECT statement
-    if (!trimmedQuery.startsWith('select')) {
-        return { isValid: false, error: 'Only SELECT queries are allowed' };
+    // Check if it's a SELECT statement or CTE (WITH statement)
+    if (!trimmedQuery.startsWith('select') && !trimmedQuery.startsWith('with')) {
+        return { isValid: false, error: 'Only SELECT queries and CTEs (WITH statements) are allowed' };
+    }
+
+    // For WITH statements, ensure they contain SELECT and don't contain dangerous operations
+    if (trimmedQuery.startsWith('with')) {
+        if (!trimmedQuery.includes('select')) {
+            return { isValid: false, error: 'WITH statements must contain a SELECT query' };
+        }
     }
 
     // Check for dangerous keywords
@@ -439,20 +446,22 @@ ${tableSchema}
 ${queryLogs}
 
 ## Guidelines:
-- Only execute SELECT queries - no data modification allowed
+- Only execute SELECT queries and CTEs (WITH statements) - no data modification allowed
+- CTEs (Common Table Expressions) with WITH clauses are fully supported for complex analysis
 - Analyze query performance and suggest optimizations
 - Provide clear explanations of the results
 - Suggest alternative approaches when applicable
 - Use insights from historical queries to inform your analysis
 - Include relevant business context in your analysis
 - When query results contain data suitable for charts, extract and format the chart data
+- Use CTEs to break down complex queries into readable, manageable parts
 
 User's context:
 - Question: "${userMessage}"
 - Business domains: ${intent.businessDomains.map((d) => `${d.domain} (${Math.round(d.relevance * 100)}% relevant)`).join(", ")}
 - Collection: ${selectedCollectionId}
 
-You MUST use the execute_sql_query tool to run queries and analyze results. Always explain your approach and findings. When you find chart-worthy data, include it in your analysis.`,
+You MUST use the execute_sql_query tool to run queries and analyze results. Always explain your approach and findings. When you find chart-worthy data, include it in your analysis. Feel free to use CTEs (WITH statements) for complex analysis that requires multiple steps or intermediate results.`,
         messages: messages,
         tools: {
             execute_sql_query: tool({
