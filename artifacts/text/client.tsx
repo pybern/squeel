@@ -17,22 +17,47 @@ import { getSuggestions } from '../actions';
 
 interface TextArtifactMetadata {
   suggestions: Array<Suggestion>;
+  chartData?: any[];
 }
 
 export const textArtifact = new Artifact<'text', TextArtifactMetadata>({
   kind: 'text',
   description: 'Useful for text content, like drafting essays and emails. Supports embedded interactive charts.',
   initialize: async ({ documentId, setMetadata }) => {
-    const suggestions = await getSuggestions({ documentId });
+    console.log('Text artifact initializing for documentId:', documentId);
+    
+    try {
+      const suggestions = await getSuggestions({ documentId });
 
-    setMetadata({
-      suggestions,
-    });
+      const initialMetadata = {
+        suggestions: Array.isArray(suggestions) ? suggestions : [],
+        chartData: [],
+      };
+      
+      console.log('Text artifact initializing with metadata:', initialMetadata);
+      setMetadata(initialMetadata);
+    } catch (error) {
+      console.error('Error initializing text artifact:', error);
+      
+      // Fallback to safe defaults
+      const fallbackMetadata = {
+        suggestions: [],
+        chartData: [],
+      };
+      
+      setMetadata(fallbackMetadata);
+    }
   },
   onStreamPart: ({ streamPart, setMetadata, setArtifact }) => {
+    const timestamp = new Date().toISOString().split('T')[1];
+    console.log(`[${timestamp}] Text artifact onStreamPart called with type:`, streamPart.type);
+    console.log('Stream part content preview:', typeof streamPart.content === 'string' ? streamPart.content.slice(0, 100) + '...' : streamPart.content);
+    
     if (streamPart.type === 'suggestion') {
       setMetadata((metadata) => {
+        console.log('Updating metadata for suggestion, current metadata:', metadata);
         return {
+          ...metadata,
           suggestions: [
             ...metadata.suggestions,
             streamPart.content as Suggestion,
@@ -41,7 +66,58 @@ export const textArtifact = new Artifact<'text', TextArtifactMetadata>({
       });
     }
 
+    if (streamPart.type === 'chart-data') {
+      console.log('🎯 Text artifact received chart data!');
+      console.log('Chart data type:', typeof streamPart.content);
+      console.log('Chart data is array:', Array.isArray(streamPart.content));
+      console.log('Chart data full content:', streamPart.content);
+      if (Array.isArray(streamPart.content)) {
+        console.log('Chart data array length:', streamPart.content.length);
+        console.log('Chart data contents:', JSON.stringify(streamPart.content, null, 2));
+      }
+      
+      setMetadata((metadata) => {
+        console.log('Current metadata before chart data update:', metadata);
+        const newMetadata = {
+          ...metadata,
+          chartData: streamPart.content as any[],
+        };
+        console.log('Updated metadata with chart data:', newMetadata);
+        return newMetadata;
+      });
+    }
+
     if (streamPart.type === 'text-delta') {
+      // Check if this text delta contains chart data
+      const content = streamPart.content as string;
+      console.log('📝 Text delta received:', content.slice(0, 100) + (content.length > 100 ? '...' : ''));
+      
+      if (content.includes('__CHART_DATA_START__') && content.includes('__CHART_DATA_END__')) {
+        console.log('🎯 Found chart data in text delta!');
+        const chartDataMatch = content.match(/__CHART_DATA_START__(.*?)__CHART_DATA_END__/s);
+        if (chartDataMatch) {
+          try {
+            const chartData = JSON.parse(chartDataMatch[1]);
+            console.log('📊 Parsed chart data from text delta:', chartData);
+            
+            setMetadata((metadata) => {
+              console.log('Current metadata before chart data update:', metadata);
+              const newMetadata = {
+                ...metadata,
+                chartData: chartData,
+              };
+              console.log('Updated metadata with parsed chart data:', newMetadata);
+              return newMetadata;
+            });
+            
+            // Don't add the chart data marker to the artifact content
+            return;
+          } catch (error) {
+            console.error('Error parsing chart data from text delta:', error);
+          }
+        }
+      }
+      
       setArtifact((draftArtifact) => {
         return {
           ...draftArtifact,
@@ -56,6 +132,14 @@ export const textArtifact = new Artifact<'text', TextArtifactMetadata>({
         };
       });
     }
+
+    if (streamPart.type === 'finish') {
+      console.log('Stream finished, artifact status will be set to idle');
+      setArtifact((draftArtifact) => ({
+        ...draftArtifact,
+        status: 'idle',
+      }));
+    }
   },
   content: ({
     mode,
@@ -68,6 +152,9 @@ export const textArtifact = new Artifact<'text', TextArtifactMetadata>({
     isLoading,
     metadata,
   }) => {
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] Text artifact content function called with metadata:`, metadata);
+    
     if (isLoading) {
       return <DocumentSkeleton artifactKind="text" />;
     }
@@ -84,11 +171,12 @@ export const textArtifact = new Artifact<'text', TextArtifactMetadata>({
         <div className="flex flex-row py-8 md:p-20 px-4">
           <Editor
             content={content}
-            suggestions={metadata ? metadata.suggestions : []}
+            suggestions={metadata?.suggestions || []}
             isCurrentVersion={isCurrentVersion}
             currentVersionIndex={currentVersionIndex}
             status={status}
             onSaveContent={onSaveContent}
+            chartData={metadata?.chartData || []}
           />
 
           {metadata &&

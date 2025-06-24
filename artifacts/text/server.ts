@@ -5,8 +5,16 @@ import { updateDocumentPrompt } from '@/lib/ai/prompts';
 
 export const textDocumentHandler = createDocumentHandler<'text'>({
   kind: 'text',
-  onCreateDocument: async ({ title, dataStream, sqlAnalysisResults }) => {
+  onCreateDocument: async ({ title, dataStream, sqlAnalysisResults, chartData }) => {
     let draftContent = '';
+    let chartDataStreamed = false;
+
+    console.log('Text document handler received:', {
+      title,
+      hasSqlAnalysisResults: !!sqlAnalysisResults,
+      chartDataCount: chartData ? chartData.length : 0,
+      chartData: chartData ? chartData.map(c => ({ title: c.title, type: c.type, dataLength: c.data.length })) : null
+    });
 
     // Use SQL analysis results if provided, otherwise use regular content generation
     const systemPrompt = sqlAnalysisResults
@@ -15,6 +23,18 @@ export const textDocumentHandler = createDocumentHandler<'text'>({
 ## Chart Integration Capabilities:
 You can embed interactive charts in your documents using chart markers. Available chart types:
 - \`[chart:chart-bar-label]\` - Displays a bar chart with labels (sample data: monthly desktop visitors)
+- \`[chart:chart-data-<index>]\` - Displays a chart with actual data from query results (index refers to the chart data array)
+
+${chartData && chartData.length > 0 ? `
+## Available Chart Data:
+You have access to ${chartData.length} chart dataset(s) from the SQL analysis:
+${chartData.map((chart, index) => `
+${index + 1}. ${chart.title} (${chart.type} chart)
+   - Description: ${chart.description || 'No description'}
+   - Data points: ${chart.data.length}
+   - Use marker: [chart:chart-data-${index}]
+`).join('')}
+` : ''}
 
 ## Document Structure Guidelines:
 Create a professional analysis document with these sections:
@@ -41,7 +61,7 @@ Create a professional analysis document with these sections:
 
 ### 5. Data Visualization
 - Include relevant charts using chart markers when data visualization would be helpful
-- Use \`[chart:chart-bar-label]\` to display sample bar charts
+${chartData && chartData.length > 0 ? `- Use the specific chart data markers: ${chartData.map((_, index) => `[chart:chart-data-${index}]`).join(', ')}` : '- Use \`[chart:chart-bar-label]\` to display sample bar charts'}
 - Charts automatically render as interactive components
 
 ### 6. Comprehensive Recommendations
@@ -62,9 +82,17 @@ Create a professional analysis document with these sections:
 - Include performance metrics where available
 - Highlight important findings with **bold** text
 - Embed charts using chart markers when data visualization is beneficial
+- Prioritize using actual chart data over sample charts when available
 
 ## Agent Results to Synthesize:
-${sqlAnalysisResults}`
+${sqlAnalysisResults}
+
+## DEBUG INFORMATION:
+Chart Data Received: ${chartData ? chartData.length : 0} charts
+${chartData && chartData.length > 0 ?
+        'Charts Available:\\n' + chartData.map((chart: any, i: number) => `${i}: ${chart.title} (${chart.type}) - ${chart.data.length} data points`).join('\\n') :
+        'No chart data available - check console logs for SQL query results and chart extraction process.'
+      }`
       : `Write about the given topic. Markdown is supported. Use headings wherever appropriate.
 
 ## Chart Integration:
@@ -89,7 +117,11 @@ Structure the document to clearly showcase:
 - Actual execution results and insights from the analyst agent
 - Combined recommendations based on all three agents
 
-Make this a professional, actionable report that displays all the important findings in an organized, easy-to-read format. Consider including data visualizations using chart markers where appropriate to illustrate key findings.`
+${chartData && chartData.length > 0 ? `
+IMPORTANT: You have access to actual chart data from the SQL analysis. Use the chart data markers [chart:chart-data-0], [chart:chart-data-1], etc. to embed the real data visualizations instead of sample charts. These charts will display the actual query results and provide meaningful visual insights.
+` : ''}
+
+Make this a professional, actionable report that displays all the important findings in an organized, easy-to-read format. Include data visualizations using the appropriate chart markers to illustrate key findings.`
       : title;
 
     const { fullStream } = streamText({

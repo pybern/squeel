@@ -31,6 +31,7 @@ type EditorProps = {
   isCurrentVersion: boolean;
   currentVersionIndex: number;
   suggestions: Array<Suggestion>;
+  chartData?: any[];
 };
 
 function PureEditor({
@@ -38,12 +39,33 @@ function PureEditor({
   onSaveContent,
   suggestions,
   status,
+  chartData,
 }: EditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<EditorView | null>(null);
 
+  // Ensure suggestions is always a valid array
+  const safeSuggestions = Array.isArray(suggestions) ? suggestions : [];
+
   // Check if content contains chart markers
   const hasCharts = content.includes('[chart:');
+
+  console.log('Text editor received:', {
+    hasCharts,
+    chartDataCount: chartData ? chartData.length : 0,
+    chartData: chartData ? chartData.map(c => ({ title: c?.title, type: c?.type })) : null,
+    suggestionsCount: safeSuggestions.length,
+  });
+
+  // Log detailed chart data for debugging
+  if (chartData && chartData.length > 0) {
+    console.log('Detailed chart data in text editor:', JSON.stringify(chartData, null, 2));
+  } else if (hasCharts) {
+    console.log('Text editor: Content has charts but no chart data received');
+  }
+
+  // Use the actual chart data received from the pipeline
+  const effectiveChartData = chartData || [];
 
   useEffect(() => {
     if (containerRef.current && !editorRef.current && !hasCharts) {
@@ -131,9 +153,10 @@ function PureEditor({
 
   useEffect(() => {
     if (editorRef.current?.state.doc && content && !hasCharts) {
+      const validSuggestions = safeSuggestions || [];
       const projectedSuggestions = projectWithPositions(
         editorRef.current.state.doc,
-        suggestions,
+        validSuggestions,
       ).filter(
         (suggestion) => suggestion.selectionStart && suggestion.selectionEnd,
       );
@@ -147,13 +170,13 @@ function PureEditor({
       transaction.setMeta(suggestionsPluginKey, { decorations });
       editorRef.current.dispatch(transaction);
     }
-  }, [suggestions, content, hasCharts]);
+  }, [safeSuggestions, content, hasCharts]);
 
   // If content has charts, render with Markdown component instead of ProseMirror
   if (hasCharts) {
     return (
       <div className="relative prose dark:prose-invert max-w-none">
-        <Markdown>{content}</Markdown>
+        <Markdown chartData={effectiveChartData}>{content}</Markdown>
       </div>
     );
   }
@@ -164,13 +187,19 @@ function PureEditor({
 }
 
 function areEqual(prevProps: EditorProps, nextProps: EditorProps) {
+  // Ensure we're comparing valid arrays
+  const prevSuggestions = Array.isArray(prevProps.suggestions) ? prevProps.suggestions : [];
+  const nextSuggestions = Array.isArray(nextProps.suggestions) ? nextProps.suggestions : [];
+  
   return (
-    prevProps.suggestions === nextProps.suggestions &&
+    prevSuggestions.length === nextSuggestions.length &&
+    prevSuggestions.every((prev, index) => prev.id === nextSuggestions[index]?.id) &&
     prevProps.currentVersionIndex === nextProps.currentVersionIndex &&
     prevProps.isCurrentVersion === nextProps.isCurrentVersion &&
     !(prevProps.status === 'streaming' && nextProps.status === 'streaming') &&
     prevProps.content === nextProps.content &&
-    prevProps.onSaveContent === nextProps.onSaveContent
+    prevProps.onSaveContent === nextProps.onSaveContent &&
+    prevProps.chartData === nextProps.chartData
   );
 }
 

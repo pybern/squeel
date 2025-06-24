@@ -95,8 +95,13 @@ const components: Partial<Components> = {
       </h6>
     );
   },
+};
+
+// Create components with chart data support
+const createComponentsWithChartData = (chartData?: any[]) => ({
+  ...components,
   // Custom paragraph renderer that can handle chart markers
-  p: ({ node, children, ...props }) => {
+  p: ({ node, children, ...props }: any) => {
     // Convert children to string to check for chart markers
     const content = React.Children.toArray(children).join('');
     
@@ -106,7 +111,7 @@ const components: Partial<Components> = {
       const chartType = chartMatch[1] as ChartComponentType;
       return (
         <div className="my-6">
-          <ChartComponent type={chartType} />
+          <ChartComponent type={chartType} chartData={chartData} />
         </div>
       );
     }
@@ -127,7 +132,7 @@ const components: Partial<Components> = {
           const chartType = parts[i] as ChartComponentType;
           elements.push(
             <div key={i} className="my-6">
-              <ChartComponent type={chartType} />
+              <ChartComponent type={chartType} chartData={chartData} />
             </div>
           );
         }
@@ -147,19 +152,27 @@ const components: Partial<Components> = {
       </p>
     );
   },
-};
+});
 
-const remarkPlugins = [remarkGfm];
-
-const NonMemoizedMarkdown = ({ children }: { children: string }) => {
-  return (
-    <ReactMarkdown remarkPlugins={remarkPlugins} components={components}>
+const PureMarkdown = memo(
+  ({
+    children,
+    chartData,
+    ...props
+  }: {
+    children: string;
+    chartData?: any[];
+  } & React.ComponentProps<typeof ReactMarkdown>) => (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={createComponentsWithChartData(chartData)}
+      {...props}
+    >
       {children}
     </ReactMarkdown>
-  );
-};
-
-export const Markdown = memo(
-  NonMemoizedMarkdown,
-  (prevProps, nextProps) => prevProps.children === nextProps.children,
+  ),
 );
+
+PureMarkdown.displayName = 'Markdown';
+
+export { PureMarkdown as Markdown };

@@ -182,6 +182,23 @@ export async function POST(request: Request) {
         selectedCollectionId
       );
 
+      // Extract chart data from analyst results
+      let chartDataForDocument = null;
+      try {
+        // Look for chart data in the analyst results
+        const chartDataMatch = analystResult.match(/CHART_DATA_START(.*?)CHART_DATA_END/s);
+        if (chartDataMatch) {
+          chartDataForDocument = JSON.parse(chartDataMatch[1]);
+          console.log('Chart data extracted successfully:', chartDataForDocument);
+        } else {
+          console.log('No CHART_DATA_START/END markers found in analyst result');
+        }
+      } catch (error) {
+        console.log('Error parsing chart data:', error);
+        console.log('Analyst result length:', analystResult.length);
+        console.log('Analyst result preview:', analystResult.slice(-500)); // Show end of result
+      }
+
       // Format combined agent results for document creation
       const combinedAgentResults = `
 === DATABASE SCHEMA ANALYSIS (Table Agent Results) ===
@@ -257,7 +274,7 @@ The goal is to create a comprehensive, professional analysis artifact that serve
             experimental_transform: smoothStream({ chunking: 'word' }),
             experimental_generateMessageId: generateUUID,
             tools: {
-              createDocument: createDocument({ session, dataStream }),
+              createDocument: createDocument({ session, dataStream, chartData: chartDataForDocument }),
             },
             onFinish: async ({ response }) => {
               if (session.user?.id) {

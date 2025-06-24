@@ -22,6 +22,18 @@ export interface CreateDocumentCallbackProps {
   dataStream: DataStreamWriter;
   session: Session;
   sqlAnalysisResults?: string;
+  chartData?: Array<{
+    type: 'bar' | 'line' | 'pie' | 'area';
+    title: string;
+    data: Array<{
+      label: string;
+      value: number;
+      [key: string]: any;
+    }>;
+    xAxis?: string;
+    yAxis?: string;
+    description?: string;
+  }>;
 }
 
 export interface UpdateDocumentCallbackProps {
@@ -51,6 +63,7 @@ export function createDocumentHandler<T extends ArtifactKind>(config: {
         dataStream: args.dataStream,
         session: args.session,
         sqlAnalysisResults: args.sqlAnalysisResults,
+        chartData: args.chartData,
       });
 
       if (args.session?.user?.id) {

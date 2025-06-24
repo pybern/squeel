@@ -10,9 +10,21 @@ import {
 interface CreateDocumentProps {
   session: Session;
   dataStream: DataStreamWriter;
+  chartData?: Array<{
+    type: 'bar' | 'line' | 'pie' | 'area';
+    title: string;
+    data: Array<{
+      label: string;
+      value: number;
+      [key: string]: any;
+    }>;
+    xAxis?: string;
+    yAxis?: string;
+    description?: string;
+  }>;
 }
 
-export const createDocument = ({ session, dataStream }: CreateDocumentProps) =>
+export const createDocument = ({ session, dataStream, chartData }: CreateDocumentProps) =>
   tool({
     description:
       'Create a document for a writing or content creation activities. This tool will call other functions that will generate the contents of the document based on the title and kind.',
@@ -59,7 +71,26 @@ export const createDocument = ({ session, dataStream }: CreateDocumentProps) =>
         dataStream,
         session,
         sqlAnalysisResults,
+        chartData,
       });
+
+      // Stream chart data after document creation but before finish
+      if (chartData && chartData.length > 0) {
+        console.log('🚀 CreateDocument: Streaming chart data after document creation');
+        console.log('Chart data count:', chartData.length);
+        console.log('Chart data structure:', JSON.stringify(chartData, null, 2));
+
+        // Try sending as a special text delta with a marker
+        const chartDataMarker = `__CHART_DATA_START__${JSON.stringify(chartData)}__CHART_DATA_END__`;
+        dataStream.writeData({
+          type: 'text-delta',
+          content: chartDataMarker,
+        });
+
+        console.log('✅ Chart data sent as text delta after document creation');
+      } else {
+        console.log('❌ No chart data to stream - chartData:', chartData);
+      }
 
       dataStream.writeData({ type: 'finish', content: '' });
 
